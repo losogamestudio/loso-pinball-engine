@@ -1,0 +1,11 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# GDExtension hot-reload temp copies (the editor makes these while a plugin
+# DLL is loaded so it can swap the real file out from under itself)
+addons/**/bin/**/~*
+
+# OS cruft
+.DS_Store
+Thumbs.db
