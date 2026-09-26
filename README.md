@@ -5,6 +5,7 @@ A homebrew pinball machine with its own MPF/GMC-style architecture — built fro
 - A **Teensy 4.x** is the hardware controller. It runs switches, solenoids, and lamps in real time and owns everything safety- or timing-critical.
 - **Godot 4.4+** (GDScript) is the game brain. It handles rules, scoring, modes, sound, video, and the display.
 - The two talk over **USB serial** using a small, human-readable, line-based protocol.
+- The game brain's actual deployment target is a **Raspberry Pi 4 or later** — desktops are for development only. See "Deploying to a Raspberry Pi" below.
 
 This is also meant to become a **beginner-friendly reference build** — if you're comfortable with embedded C/C++ but new to game engines (or vice versa), the goal is that you can read this repo and follow along.
 
@@ -47,6 +48,67 @@ res://
 4. Run the project (`control.tscn` is the main scene). Pick your Teensy's serial port from the dropdown and hit **Connect**.
 5. Once linked, check "Auto-connect at startup" if you want it to remember that port and reconnect automatically next time.
 
+## Deploying to a Raspberry Pi
+
+The real cabinet target is a **Raspberry Pi 4 or later**, running 64-bit Raspberry Pi OS (Bookworm or newer). Day-to-day development happens on a desktop; this section is for getting the same project running on the actual hardware.
+
+### 1. Install Godot on the Pi
+
+Download the **Linux — arm64** build of Godot 4.6+ (standard, non-.NET) from [godotengine.org/download/linux](https://godotengine.org/download/linux/). Official arm64 editor builds and export templates are provided directly — no community/unofficial build needed. Extract it and make it executable:
+
+```sh
+chmod +x Godot_v4.6.x-stable_linux.arm64
+```
+
+### 2. Serial port access
+
+Same as any Linux box: add your user to `dialout` so Godot can open the Teensy's serial port without root:
+
+```sh
+sudo usermod -aG dialout $USER
+```
+
+Log out and back in (or reboot) for the group change to take effect. The Teensy should show up as `/dev/ttyACM0` — confirm with `ls /dev/ttyACM*` after plugging it in.
+
+### 3. The GdSerial plugin already has you covered
+
+`addons/gdserial/bin/linux-arm64/libgdserial.so` is vendored in this repo and already wired up in `gdserial.gdextension`. There's nothing to build or install for the plugin itself on the Pi.
+
+### 4. Run it — two ways
+
+**In the editor** — fine for development/testing directly on the Pi: open the project with the arm64 Godot editor binary, same as on desktop.
+
+**As an exported standalone build** — what the actual cabinet should run:
+
+1. In the editor: **Editor → Manage Export Templates**, install the templates matching your Godot version (one download covers all architectures, arm64 included).
+2. **Project → Export… → Add… → Linux**. Set the preset's architecture to `arm64`.
+3. Export Project. Check "Embed PCK" so you get a single self-contained binary.
+4. Copy the exported binary to the Pi (or export directly on it) and `chmod +x` it.
+
+### 5. Kiosk setup (fullscreen, boots straight into the game)
+
+- Project Settings → Display → Window: set **Mode** to `Fullscreen` — or just pass `--fullscreen` on the command line instead, without touching project settings.
+- Disable screen blanking so the display doesn't sleep mid-game: `sudo raspi-config` → **Display Options** → **Screen Blanking** → off.
+- Autostart on boot: drop a `.desktop` file under `~/.config/autostart/` (or use a systemd user service) that runs the exported binary, e.g.:
+
+  ```ini
+  [Desktop Entry]
+  Type=Application
+  Name=Team America Pinball
+  Exec=/home/pi/pinball/team_america_pinball.arm64
+  ```
+
+### 6. The open risk: video cutscenes
+
+Godot 4's built-in video player only supports **Ogg Theora**, decoded entirely in software — there's no hardware-accelerated video path in core Godot on Linux. That's rarely a problem on a desktop, but a Pi 4's CPU can struggle with it at higher resolutions or framerates.
+
+**Before building out real cutscene content**, encode a representative test clip and play it back with `VideoStreamPlayer` on actual Pi 4 hardware, watching for dropped frames and CPU load. Don't assume desktop playback performance will carry over.
+
+If it's not fast enough, in rough order of effort:
+1. Drop resolution, framerate, or bitrate first — Theora's decode cost scales with all three.
+2. Use sprite-sheet or `AnimationPlayer`-driven animation instead of true encoded video for short transitions.
+3. As a last resort, an external hardware-accelerated player (e.g. GStreamer with V4L2 M2M) composited alongside the Godot window — real added complexity, worth avoiding unless the simpler options genuinely aren't enough.
+
 ## What's working right now
 
 The main scene is a **diagnostics panel** for the serial link and I/O, and is meant to keep growing into the full diagnostics page for the real machine:
@@ -68,7 +130,7 @@ Plain ASCII, one message per line, ending in `\n`. Full message tables (Teensy�
 2. Game state skeleton: attract → game start → ball in play → drain → next ball → game over, enabling/disabling hardware rules per state.
 3. Real flipper state machine on the Teensy (24V pull-in → EOS → PWM hold) plus flipper enable/disable over the protocol.
 4. Shared hardware map for the real playfield (switches/coils/lamps get names instead of magic numbers).
-5. Audio, video, and a score display in Godot.
+5. Audio, video, and a score display in Godot. Video cutscenes need validating on real Pi 4 hardware before much production time goes into them — see "Deploying to a Raspberry Pi" above.
 
 ## Hardware
 

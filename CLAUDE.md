@@ -12,6 +12,16 @@ A homebrew pinball machine with its own MPF/GMC-style architecture. We are **not
 
 The project is also meant to become a **beginner-friendly reference build** that non-technical people can follow. Keep code readable, well commented, and free of clever tricks.
 
+## Target hardware (keep this in mind for every decision)
+
+The game brain's end home is a **Raspberry Pi 4 or later**, not a desktop PC. The desktop is for development; the Pi is the deployment target for the actual cabinet. Concretely:
+
+- `project.godot` already sets the renderer to **GL Compatibility** (OpenGL ES 3 under the hood). That's deliberate and Pi-appropriate — don't suggest switching to the Forward+ (Vulkan) renderer for this project, since the Pi's GPU doesn't run it well.
+- **Video cutscenes are the one open risk.** Godot 4's built-in `VideoStreamPlayer` only decodes Ogg Theora, entirely in software — there is no hardware-accelerated video path in core Godot on Linux/Pi. That's fine on a desktop but can bog down a Pi 4's CPU at higher resolutions or framerates.
+  - Don't assume heavy video cutscenes will just work on the Pi. Before investing real production time in cutscene content, encode a representative test clip and play it back on real Pi 4 hardware to see actual dropped-frame/CPU behavior — don't extrapolate from how it runs on a desktop.
+  - If Theora playback turns out to be a bottleneck, the fallback options (roughly in order of effort) are: shrink resolution/framerate/bitrate first; consider sprite-sheet or `AnimationPlayer`-driven animation instead of true encoded video for shorter transitions; only as a last resort look at an external hardware-accelerated player (e.g. GStreamer/V4L2 M2M) composited alongside the Godot window, which adds real complexity and should be avoided if the simpler options are enough.
+  - See the README's "Deploying to a Raspberry Pi" section for the concrete setup/export steps.
+
 ## About the developer (how to work with me)
 
 - I'm an embedded systems engineer. I'm comfortable with firmware, electronics, C/C++, and the Teensy side.
@@ -64,7 +74,7 @@ If the actual files are somewhere else, update this section. Don't move files th
 3. **Autoload**: `pinball_io.gd` is registered as **`PinballIO`** under Project Settings → Globals → Autoload.
    - ⚠️ Godot names it `PinballIo` from the filename by default. It must be renamed to exactly `PinballIO`, or every script fails with *Identifier "PinballIO" not declared*.
 4. **Teensy**: Teensy 4.x, Arduino IDE with Teensyduino, USB Type "Serial". Baud is ignored on Teensy USB, but GdSerial requires a value, so we pass 115200. The Teensy doesn't reset when the port opens, so there are no DTR concerns.
-5. **Linux**: the user must be in the `dialout` group to open serial ports.
+5. **Linux (including the Raspberry Pi)**: the user must be in the `dialout` group to open serial ports. See the README's "Deploying to a Raspberry Pi" section for the full Pi-specific setup.
 
 ## Serial protocol (v0.1)
 
@@ -146,7 +156,7 @@ State: `is_port_open`, `is_linked`, `switches` (id → bool).
 2. Game state skeleton: attract mode → game start → ball in play → drain → next ball → game over. Enable and disable rules per state.
 3. Real flipper state machine on the Teensy (24V pull-in → EOS → PWM hold), plus flipper enable/disable over the protocol.
 4. Shared hardware map for the real playfield.
-5. Audio, video, and a score display in Godot. An 80s-style segment display look is an option, possibly as a hybrid.
+5. Audio, video, and a score display in Godot. An 80s-style segment display look is an option, possibly as a hybrid. **Validate cutscene video on real Pi 4 hardware before building out a lot of cutscene content** — see "Target hardware" above.
 
 ## Things to avoid
 
