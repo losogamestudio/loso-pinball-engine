@@ -13,6 +13,11 @@ const HB_FADE_SEC := 0.4                 ## Teensy sends HB once/sec; fade fully
 const LOG_MAX_LINES := 300
 const LED_MODES := ["OFF", "ON", "BLINK"]
 
+## There's no keyboard on the real cabinet — Left/Right are a desktop-only
+## stand-in for bench-testing coils 0 and 1, same as clicking the buttons.
+const COIL_0_TEST_PULSE_MS := 40
+const COIL_1_TEST_PULSE_MS := 150
+
 var _port_menu: OptionButton
 var _status: Label
 var _heartbeat_lamp: ColorRect
@@ -46,6 +51,19 @@ func _ready() -> void:
 	# (autoloads run their _ready before the main scene does) — reflect that.
 	if PinballIO.is_port_open:
 		_set_status("Port open, waiting for Teensy…", Color.KHAKI)
+
+
+func _input(event: InputEvent) -> void:
+	# Keyboard stand-in for coil buttons — there's no keyboard on the real
+	# cabinet, so this only ever exists for bench-testing from a desktop.
+	if event is InputEventKey and event.pressed and not event.echo:
+		var key_event := event as InputEventKey
+		if key_event.keycode == KEY_LEFT:
+			PinballIO.pulse_coil(0, COIL_0_TEST_PULSE_MS)
+			accept_event()
+		elif key_event.keycode == KEY_RIGHT:
+			PinballIO.pulse_coil(1, COIL_1_TEST_PULSE_MS)
+			accept_event()
 
 
 # ---------------------------------------------------------------- game events
@@ -241,8 +259,8 @@ func _build_ui() -> void:
 	# Outputs
 	var out := HBoxContainer.new()
 	root.add_child(out)
-	out.add_child(_make_button("Pulse coil 0", func(): PinballIO.pulse_coil(0, 40)))
-	out.add_child(_make_button("Pulse coil 1", func(): PinballIO.pulse_coil(1, 150)))
+	out.add_child(_make_button("Pulse coil 0 (←)", func(): PinballIO.pulse_coil(0, COIL_0_TEST_PULSE_MS)))
+	out.add_child(_make_button("Pulse coil 1 (→)", func(): PinballIO.pulse_coil(1, COIL_1_TEST_PULSE_MS)))
 	for i in _led_modes.size():
 		var b := Button.new()
 		b.text = "LED %d: OFF" % i
