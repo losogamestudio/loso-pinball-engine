@@ -24,13 +24,24 @@ Godot's job:
 - Scoring, modes, ball tracking, audio, video, UI.
 - One-off commands: kickout pulses, drop target resets, lamp states.
 
-See [`CLAUDE.md`](CLAUDE.md) for the full architecture notes, coding conventions, and the complete serial protocol spec — that file is written as the source of truth for this project and is kept up to date as things change.
+See [`CLAUDE.md`](CLAUDE.md) for the terse, authoritative project spec (protocol, conventions, roadmap), and [`Docs/`](Docs/README.md) for the fuller write-up — [Architecture](Docs/architecture.md) goes deeper on the reasoning behind this split.
+
+## Documentation
+
+Start in [`Docs/README.md`](Docs/README.md) for the full set. Highlights:
+
+- [Getting started](Docs/getting-started.md) — desktop dev setup, step by step.
+- [Architecture](Docs/architecture.md) — the Teensy/Godot split, and why.
+- [Serial protocol](Docs/serial-protocol.md) — the wire protocol, with an example session.
+- [Diagnostics panel](Docs/diagnostics-panel.md) — what every control in `control.tscn` does.
+- [Deploying to a Raspberry Pi](Docs/raspberry-pi.md) — from a 5-step bench test up to a full kiosk build.
 
 ## Repo layout
 
 ```
 res://
-├── CLAUDE.md                 # full project spec: protocol, conventions, roadmap
+├── CLAUDE.md                 # terse, authoritative project spec: protocol, conventions, roadmap
+├── Docs/                      # the fuller human-readable write-up — start at Docs/README.md
 ├── project.godot
 ├── addons/gdserial/           # vendored GdSerial plugin (third-party, don't edit)
 ├── pinball_io.gd              # Autoload "PinballIO" — serial link, turned into signals
@@ -48,66 +59,11 @@ res://
 4. Run the project (`control.tscn` is the main scene). Pick your Teensy's serial port from the dropdown and hit **Connect**.
 5. Once linked, check "Auto-connect at startup" if you want it to remember that port and reconnect automatically next time.
 
+Full walkthrough (hardware shopping list, headless testing, what to expect on screen): [`Docs/getting-started.md`](Docs/getting-started.md).
+
 ## Deploying to a Raspberry Pi
 
-The real cabinet target is a **Raspberry Pi 4 or later**, running 64-bit Raspberry Pi OS (Bookworm or newer). Day-to-day development happens on a desktop; this section is for getting the same project running on the actual hardware.
-
-### 1. Install Godot on the Pi
-
-Download the **Linux — arm64** build of Godot 4.6+ (standard, non-.NET) from [godotengine.org/download/linux](https://godotengine.org/download/linux/). Official arm64 editor builds and export templates are provided directly — no community/unofficial build needed. Extract it and make it executable:
-
-```sh
-chmod +x Godot_v4.6.x-stable_linux.arm64
-```
-
-### 2. Serial port access
-
-Same as any Linux box: add your user to `dialout` so Godot can open the Teensy's serial port without root:
-
-```sh
-sudo usermod -aG dialout $USER
-```
-
-Log out and back in (or reboot) for the group change to take effect. The Teensy should show up as `/dev/ttyACM0` — confirm with `ls /dev/ttyACM*` after plugging it in.
-
-### 3. The GdSerial plugin already has you covered
-
-`addons/gdserial/bin/linux-arm64/libgdserial.so` is vendored in this repo and already wired up in `gdserial.gdextension`. There's nothing to build or install for the plugin itself on the Pi.
-
-### 4. Run it — two ways
-
-**In the editor** — fine for development/testing directly on the Pi: open the project with the arm64 Godot editor binary, same as on desktop.
-
-**As an exported standalone build** — what the actual cabinet should run:
-
-1. In the editor: **Editor → Manage Export Templates**, install the templates matching your Godot version (one download covers all architectures, arm64 included).
-2. **Project → Export… → Add… → Linux**. Set the preset's architecture to `arm64`.
-3. Export Project. Check "Embed PCK" so you get a single self-contained binary.
-4. Copy the exported binary to the Pi (or export directly on it) and `chmod +x` it.
-
-### 5. Kiosk setup (fullscreen, boots straight into the game)
-
-- Project Settings → Display → Window: set **Mode** to `Fullscreen` — or just pass `--fullscreen` on the command line instead, without touching project settings.
-- Disable screen blanking so the display doesn't sleep mid-game: `sudo raspi-config` → **Display Options** → **Screen Blanking** → off.
-- Autostart on boot: drop a `.desktop` file under `~/.config/autostart/` (or use a systemd user service) that runs the exported binary, e.g.:
-
-  ```ini
-  [Desktop Entry]
-  Type=Application
-  Name=Team America Pinball
-  Exec=/home/pi/pinball/team_america_pinball.arm64
-  ```
-
-### 6. The open risk: video cutscenes
-
-Godot 4's built-in video player only supports **Ogg Theora**, decoded entirely in software — there's no hardware-accelerated video path in core Godot on Linux. That's rarely a problem on a desktop, but a Pi 4's CPU can struggle with it at higher resolutions or framerates.
-
-**Before building out real cutscene content**, encode a representative test clip and play it back with `VideoStreamPlayer` on actual Pi 4 hardware, watching for dropped frames and CPU load. Don't assume desktop playback performance will carry over.
-
-If it's not fast enough, in rough order of effort:
-1. Drop resolution, framerate, or bitrate first — Theora's decode cost scales with all three.
-2. Use sprite-sheet or `AnimationPlayer`-driven animation instead of true encoded video for short transitions.
-3. As a last resort, an external hardware-accelerated player (e.g. GStreamer with V4L2 M2M) composited alongside the Godot window — real added complexity, worth avoiding unless the simpler options genuinely aren't enough.
+The real cabinet target is a **Raspberry Pi 4 or later** — desktops are for development only. The fastest path is five steps and no export/build required; there's also a full kiosk setup (fullscreen, autostart-on-boot) for when the cabinet's ready. Both, plus the one open risk (video cutscene performance on Pi hardware), are in [`Docs/raspberry-pi.md`](Docs/raspberry-pi.md).
 
 ## What's working right now
 
@@ -115,12 +71,14 @@ The main scene is a **diagnostics panel** for the serial link and I/O, and is me
 
 - Port picker with auto-connect: remembers the last port that actually answered the Teensy's `HELLO`, and can reconnect to it automatically on startup.
 - Live link status, plus a heartbeat lamp that pulses on every `HB` from the Teensy — so a frozen board is visibly different from a merely-quiet one.
-- Live switch lamps, coil pulse buttons, LED mode cycling, hardware-rule toggling (`SLING_L`), round-trip ping, and an analog bar for a pot on A0.
+- Live switch lamps, coil pulse buttons (with Left/Right arrow-key shortcuts for bench testing — there's no keyboard on the real cabinet), LED mode cycling, hardware-rule toggling (`SLING_L`), round-trip ping, and an analog bar for a pot on A0.
 - A scrolling raw message log for everything crossing the link.
+
+Full walkthrough of every control: [`Docs/diagnostics-panel.md`](Docs/diagnostics-panel.md).
 
 ## Serial protocol
 
-Plain ASCII, one message per line, ending in `\n`. Full message tables (Teensy→Godot and Godot→Teensy) and link/watchdog behavior are documented in `CLAUDE.md`. Short version: Godot says `HELLO` to arm the link and sends `HB` every 100ms to keep it alive; the Teensy runs a 500ms watchdog that kills all outputs and disables hardware rules the moment Godot goes quiet.
+Plain ASCII, one message per line, ending in `\n`. Full message tables (Teensy→Godot and Godot→Teensy) and link/watchdog behavior are documented in `CLAUDE.md`, with a walked-through example session in [`Docs/serial-protocol.md`](Docs/serial-protocol.md). Short version: Godot says `HELLO` to arm the link and sends `HB` every 100ms to keep it alive; the Teensy runs a 500ms watchdog that kills all outputs and disables hardware rules the moment Godot goes quiet.
 
 **Any protocol change is made on both sides in the same change** — the `.ino` sketch, `pinball_io.gd`, and the protocol table in `CLAUDE.md` all move together.
 

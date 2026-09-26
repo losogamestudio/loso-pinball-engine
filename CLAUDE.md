@@ -51,6 +51,7 @@ Driver hardware for reference: custom MOSFET boards using AOD4184 N-channel MOSF
 ```
 res://
 ├── CLAUDE.md
+├── Docs/                      # human-facing write-up: architecture, protocol, setup, Pi deployment
 ├── project.godot
 ├── addons/gdserial/          # GdSerial plugin (third party, don't edit)
 ├── pinball_io.gd             # Autoload "PinballIO": serial link → signals
@@ -63,6 +64,8 @@ res://
 Everything currently lives flat at the project root rather than under `autoload/`/`scenes/`/`scripts/` subfolders — that's how the user placed these files, so don't move them without asking.
 
 If the actual files are somewhere else, update this section. Don't move files the user placed without asking.
+
+**`CLAUDE.md` vs `Docs/`**: this file stays terse and is the authoritative spec — the protocol table here, in particular, is ground truth and must stay in lockstep with `pinio_test.ino` and `pinball_io.gd`. `Docs/` is the expanded, human-facing version of the same material (architecture rationale, a worked serial-protocol example, setup walkthroughs, Raspberry Pi deployment) — update both when something in this file changes in a way that affects them, but don't let `Docs/` become a second copy of the raw protocol table that can drift.
 
 ## Dependencies & setup
 

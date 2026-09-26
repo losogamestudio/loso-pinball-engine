@@ -1,0 +1,15 @@
+# Documentation
+
+This folder is the deeper write-up of the whole system. The root [`README.md`](../README.md) is the quick pitch and quick-start; these pages go further.
+
+- **[Architecture](architecture.md)** — the Teensy/Godot split, why it's built this way, the driver hardware.
+- **[Serial protocol](serial-protocol.md)** — the wire protocol between the Teensy and Godot, with a walked-through example session.
+- **[Getting started](getting-started.md)** — desktop dev setup, from a blank machine to a working link on the bench.
+- **[Diagnostics panel](diagnostics-panel.md)** — what every control in the test/diagnostics scene does and why it's there.
+- **[Deploying to a Raspberry Pi](raspberry-pi.md)** — getting the same project running on the real cabinet hardware, from a fast bench-test path up to a full kiosk setup.
+
+For coding conventions and the terse, authoritative project spec that Claude Code (or any contributor) should treat as ground truth, see [`CLAUDE.md`](../CLAUDE.md) at the repo root. These docs explain the *why* and walk through things step by step; `CLAUDE.md` is the compact reference that has to stay perfectly in sync with the code.
+
+## Status
+
+This is a living set of docs for a project that's still early — expect it to grow alongside the game. Right now it covers everything through the diagnostics panel and Raspberry Pi deployment (roadmap step 1). As the game-state skeleton, real flipper firmware, hardware map, and audio/video land, they'll get their own pages here.
