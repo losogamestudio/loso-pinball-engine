@@ -8,7 +8,7 @@ This is the fastest way to see it working on real hardware — no export step, n
 
 1. **Get the code:**
    ```sh
-   git clone https://github.com/losogamestudio/team-america-pinball.git
+   git clone https://github.com/losogamestudio/loso-pinball-engine.git
    ```
 2. **Get Godot** — the **Linux — arm64** standard build (not .NET), matching the version you use on desktop, from [godotengine.org/download/linux](https://godotengine.org/download/linux/):
    ```sh
@@ -22,7 +22,7 @@ This is the fastest way to see it working on real hardware — no export step, n
    ```
 4. **Plug in the Teensy, then run the project directly.** Since `control.tscn` is already the main scene, pointing the engine at the project folder launches straight into the diagnostics panel — no editor window, no clicking Play:
    ```sh
-   ./Godot_v4.6.x-stable_linux.arm64 --path /path/to/team-america-pinball
+   ./Godot_v4.6.x-stable_linux.arm64 --path /path/to/loso-pinball-engine
    ```
 5. In the panel: pick the Teensy's port (it should show up as `/dev/ttyACM0`), hit **Connect**, then check **"Auto-connect at startup"** so it reconnects on its own from here on. See [Diagnostics panel](diagnostics-panel.md) for what everything on screen does.
 
@@ -46,8 +46,8 @@ Once you're past bench-testing and want something that boots straight into the g
   ```ini
   [Desktop Entry]
   Type=Application
-  Name=Team America Pinball
-  Exec=/home/pi/pinball/team_america_pinball.arm64
+  Name=Loso Pinball Engine
+  Exec=/home/pi/pinball/loso_pinball_engine.arm64
   ```
 
 ## The open risk: video cutscenes

@@ -14,7 +14,7 @@ This walks through going from a fresh checkout to a live serial link on your des
 ### 1. Get the code
 
 ```sh
-git clone https://github.com/losogamestudio/team-america-pinball.git
+git clone https://github.com/losogamestudio/loso-pinball-engine.git
 ```
 
 ### 2. Open the project in Godot

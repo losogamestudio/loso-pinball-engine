@@ -1,4 +1,4 @@
-# Team America Pinball
+# Loso Pinball Engine
 
 A homebrew pinball machine with its own MPF/GMC-style architecture — built from scratch, not on top of the Mission Pinball Framework.
 
