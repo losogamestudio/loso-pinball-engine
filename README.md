@@ -34,7 +34,7 @@ Start in [`Docs/README.md`](Docs/README.md) for the full set. Highlights:
 - [Architecture](Docs/architecture.md) — the Teensy/Godot split, and why.
 - [Serial protocol](Docs/serial-protocol.md) — the wire protocol, with an example session.
 - [Diagnostics panel](Docs/diagnostics-panel.md) — what every control in `control.tscn` does.
-- [Deploying to a Raspberry Pi](Docs/raspberry-pi.md) — from a 5-step bench test up to a full kiosk build.
+- [Deploying to a Raspberry Pi](Docs/raspberry-pi.md) — from imaging the SD card to a working bench test, up to a full kiosk build.
 
 ## Repo layout
 
@@ -63,7 +63,7 @@ Full walkthrough (hardware shopping list, headless testing, what to expect on sc
 
 ## Deploying to a Raspberry Pi
 
-The real cabinet target is a **Raspberry Pi 4 or later** — desktops are for development only. The fastest path is five steps and no export/build required; there's also a full kiosk setup (fullscreen, autostart-on-boot) for when the cabinet's ready. Both, plus the one open risk (video cutscene performance on Pi hardware), are in [`Docs/raspberry-pi.md`](Docs/raspberry-pi.md).
+The real cabinet target is a **Raspberry Pi 4 or later** — desktops are for development only. The step-by-step walkthrough goes from imaging the SD card to a working link with the Teensy, with no export/build required; there's also a full kiosk setup (fullscreen, autostart-on-boot) for when the cabinet's ready. Both, plus the one open risk (video cutscene performance on Pi hardware), are in [`Docs/raspberry-pi.md`](Docs/raspberry-pi.md).
 
 ## What's working right now
 
