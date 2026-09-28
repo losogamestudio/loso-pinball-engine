@@ -157,7 +157,7 @@ func _log_line(text: String) -> void:
 
 func _refresh_ports() -> void:
 	_port_menu.clear()
-	var ports := PinballIO.list_ports()
+	var ports: Array[String] = PinballIO.list_ports()
 	for p in ports:
 		_port_menu.add_item(p)
 	if _port_menu.item_count == 0:
@@ -165,7 +165,7 @@ func _refresh_ports() -> void:
 		_port_menu.disabled = true
 	else:
 		_port_menu.disabled = false
-		var last_index := ports.find(PinballIO.last_port)
+		var last_index: int = ports.find(PinballIO.last_port)
 		if last_index != -1:
 			_port_menu.select(last_index)
 

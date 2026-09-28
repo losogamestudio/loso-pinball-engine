@@ -15,13 +15,13 @@ run/main_scene="res://control.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[autoload]
+
+PinballIO="*res://pinball_io.gd"
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/gdserial/plugin.cfg")
-
-[autoload]
-
-PinballIO="*uid://bkc1htejcx3fi"
 
 [physics]
 
