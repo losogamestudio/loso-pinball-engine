@@ -86,7 +86,7 @@ This is the fastest way to see the project working on real hardware: no export s
    ```
    Your SSH session drops. Wait a minute, then `ssh` back in.
 
-7. **Plug in the Teensy and run the project.** Since `control.tscn` is the main scene, this launches straight into the diagnostics panel:
+7. **Plug in the Teensy and run the project.** It opens on the attract-mode placeholder; press **F1** (keyboard on the Pi) to open the diagnostics panel:
    ```sh
    ~/godot/Godot_v4.6.1-stable_linux.arm64 --path ~/loso-pinball-engine --display-driver wayland --rendering-driver opengl3_es
    ```

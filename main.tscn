@@ -1,0 +1,25 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://modes/attract.tscn" id="2_attract"]
+[ext_resource type="PackedScene" path="res://control.tscn" id="3_service"]
+
+[node name="Main" type="Node"]
+script = ExtResource("1_main")
+start_mode = ExtResource("2_attract")
+service_scene = ExtResource("3_service")
+
+[node name="ModeHost" type="Node" parent="."]
+
+[node name="ServiceLayer" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="Backdrop" type="ColorRect" parent="ServiceLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.08, 0.08, 0.1, 1)
+
+[node name="ServiceHost" type="Node" parent="ServiceLayer"]

@@ -1,6 +1,6 @@
 # Diagnostics panel
 
-`control.tscn` (built entirely in code by `test_panel.gd` — there's no scene tree to wire up by hand) is the project's main scene right now. It started as a way to exercise the serial link during development, and is meant to keep growing into the permanent diagnostics page for the real machine, rather than getting thrown away once the game itself exists.
+`control.tscn` (built entirely in code by `test_panel.gd` — there's no scene tree to wire up by hand) is the project's service page right now: the base scene (`main.tscn`) loads it on top of whatever mode is running when you press **F1**, and frees it when you press F1 again. Because it's freed on close, its log and fake score reset each time it opens. It started as a way to exercise the serial link during development, and is meant to keep growing into the permanent diagnostics page for the real machine, rather than getting thrown away once the game itself exists.
 
 This page walks through every control and why it's there.
 

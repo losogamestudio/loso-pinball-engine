@@ -55,13 +55,17 @@ res://
 ├── project.godot
 ├── addons/gdserial/          # GdSerial plugin (third party, don't edit)
 ├── pinball_io.gd             # Autoload "PinballIO": serial link → signals
-├── control.tscn              # Debug/test panel scene (root Control + test_panel.gd)
+├── main.tscn / main.gd       # Base scene (the main scene): always loaded, hosts modes + service page
+├── modes/                    # Mode scenes swapped into Main's ModeHost (attract.tscn placeholder so far)
+├── control.tscn              # Debug/test panel scene (root Control + test_panel.gd), shown as the F1 service page
 ├── test_panel.gd
 └── Firmware/
     └── pinio_test/pinio_test.ino   # Teensy sketch (built with Arduino IDE + Teensyduino)
 ```
 
-Everything currently lives flat at the project root rather than under `autoload/`/`scenes/`/`scripts/` subfolders — that's how the user placed these files, so don't move them without asking.
+The original files live flat at the project root — that's how the user placed them, so don't move them without asking. New work goes in subfolders (`modes/`, and per the build-out plan `boards/` and `config/`).
+
+**Scene structure**: `main.tscn` is always loaded (like Unreal's persistent level). It has a `ModeHost` node holding exactly one mode scene, swapped with `Main.show_mode(scene)`, and a `ServiceLayer` CanvasLayer on top that loads the service page on open and frees it on close (`open_service()` / `close_service()` / `toggle_service()`, F1 on a keyboard). Don't use `get_tree().change_scene_to_*()` — that would unload Main.
 
 If the actual files are somewhere else, update this section. Don't move files the user placed without asking.
 

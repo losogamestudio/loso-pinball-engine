@@ -39,7 +39,7 @@ You don't need real coils or lamps to try this out — LEDs make the pulses and 
 
 ### 4. Run the project
 
-`control.tscn` is the main scene, so just hit Play (or run it directly — see below). You'll land on the [diagnostics panel](diagnostics-panel.md):
+Hit Play (or run it directly — see below). The base scene, `main.tscn`, opens on an attract-mode placeholder. Press **F1** to open the [diagnostics panel](diagnostics-panel.md) (F1 again closes it):
 
 1. Pick your Teensy's port from the dropdown (it'll show up as something like `COM9` on Windows or `/dev/ttyACM0` on Linux) and hit **Connect**.
 2. The status label should go from "Port open, waiting for Teensy…" to "Linked: PINIO 0.1" within a second, and the four switch lamps should reflect whatever's currently pressed.
