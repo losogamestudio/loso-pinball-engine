@@ -2,7 +2,7 @@
 
 A homebrew pinball machine with its own MPF/GMC-style architecture — built from scratch, not on top of the Mission Pinball Framework.
 
-- A **Teensy 4.x** is the hardware controller. It runs switches, solenoids, and lamps in real time and owns everything safety- or timing-critical.
+- A **Teensy 4.1** is the hardware controller (more board types, and several boards at once, are on the way). It runs switches, solenoids, and lamps in real time and owns everything safety- or timing-critical.
 - **Godot 4.4+** (GDScript) is the game brain. It handles rules, scoring, modes, sound, video, and the display.
 - The two talk over **USB serial** using a small, human-readable, line-based protocol.
 - The game brain's actual deployment target is a **Raspberry Pi 4 or later** — desktops are for development only. See "Deploying to a Raspberry Pi" below.
@@ -20,7 +20,7 @@ Stays on the Teensy, always:
 - Coil safety: a max pulse length on every coil, plus a watchdog that kills all outputs if Godot stops talking.
 
 Godot's job:
-- Enable/disable those hardware rules (e.g. off during tilt or game over) — Godot never fires a rule itself.
+- Tell each board its layout (which pin is which switch/coil/lamp, and how each coil's rule behaves) from one [machine config](Docs/configuration.md), then arm/disarm those rules (e.g. off during tilt or game over) — Godot never fires a rule itself.
 - Scoring, modes, ball tracking, audio, video, UI.
 - One-off commands: kickout pulses, drop target resets, lamp states.
 
@@ -32,6 +32,7 @@ Start in [`Docs/README.md`](Docs/README.md) for the full set. Highlights:
 
 - [Getting started](Docs/getting-started.md) — desktop dev setup, step by step.
 - [Architecture](Docs/architecture.md) — the Teensy/Godot split, and why.
+- [Machine configuration](Docs/configuration.md) — which pin is which switch, coil or lamp, and how coil rules are set up.
 - [Serial protocol](Docs/serial-protocol.md) — the wire protocol, with an example session.
 - [Diagnostics panel](Docs/diagnostics-panel.md) — what every control in `control.tscn` does.
 - [Deploying to a Raspberry Pi](Docs/raspberry-pi.md) — from imaging the SD card to a working bench test, up to a full kiosk build.
@@ -44,20 +45,24 @@ res://
 ├── Docs/                      # the fuller human-readable write-up — start at Docs/README.md
 ├── project.godot
 ├── addons/gdserial/           # vendored GdSerial plugin (third-party, don't edit)
-├── pinball_io.gd              # Autoload "PinballIO" — serial link, turned into signals
+├── pinball_io.gd              # Autoload "PinballIO" — every board link, turned into named signals
+├── board_link.gd              # one serial link to one board
+├── boards/                    # board type definitions (which pins can do what)
+├── config/                    # Autoload "MachineConfig" + the default machine layout (JSON)
+├── test/                      # headless tests, no hardware needed
 ├── main.tscn / main.gd        # base scene: always loaded, hosts mode scenes + the F1 service page
 ├── modes/                     # mode scenes (attract placeholder for now)
 ├── control.tscn               # diagnostics/test panel scene (the service page for now)
 ├── test_panel.gd
 └── Firmware/
-    └── pinio_test/pinio_test.ino   # Teensy sketch (Arduino IDE + Teensyduino)
+    └── pinio/                      # PINIO 0.2 generic, configurable firmware (Arduino IDE + Teensyduino)
 ```
 
 ## Getting started
 
 1. Install **Godot 4.4+**, standard build (not .NET) — this project is GDScript only.
 2. Open the project folder in Godot. The GdSerial plugin is already vendored under `addons/gdserial` and enabled in `project.godot`, so there's nothing extra to install there.
-3. Flash `Firmware/pinio_test/pinio_test.ino` to a Teensy 4.x with Arduino IDE + Teensyduino (USB Type: "Serial"). See the wiring notes at the top of that file for the practice hardware map.
+3. Flash `Firmware/pinio/pinio.ino` to a Teensy 4.1 with Arduino IDE + Teensyduino (USB Type: "Serial"). The bench wiring for the default config is in [`Docs/getting-started.md`](Docs/getting-started.md).
 4. Run the project. It opens on an attract-mode placeholder; press **F1** to open the diagnostics panel. Pick your Teensy's serial port from the dropdown and hit **Connect**.
 5. Once linked, check "Auto-connect at startup" if you want it to remember that port and reconnect automatically next time.
 
@@ -71,25 +76,26 @@ The real cabinet target is a **Raspberry Pi 4 or later** — desktops are for de
 
 The base scene (`main.tscn`) starts on an attract-mode placeholder, and **F1** opens a **diagnostics panel** for the serial link and I/O. The panel is meant to keep growing into the full diagnostics page for the real machine:
 
-- Port picker with auto-connect: remembers the last port that actually answered the Teensy's `HELLO`, and can reconnect to it automatically on startup.
-- Live link status, plus a heartbeat lamp that pulses on every `HB` from the Teensy — so a frozen board is visibly different from a merely-quiet one.
-- Live switch lamps, coil pulse buttons (with Left/Right arrow-key shortcuts for bench testing — there's no keyboard on the real cabinet), LED mode cycling, hardware-rule toggling (`SLING_L`), round-trip ping, and an analog bar for a pot on A0.
-- A scrolling raw message log for everything crossing the link.
+- The whole I/O layout comes from one machine config file. On link, Godot checks it and sends it to the board, which then runs flippers (trigger → full power → EOS → PWM hold), slings and pops entirely by itself.
+- Port picker with auto-connect: remembers the last port a board actually answered on, and can reconnect to it automatically on startup.
+- Live link/board status, plus a heartbeat lamp that pulses on every `HB` from the board — so a frozen board is visibly different from a merely-quiet one.
+- A named lamp per switch, a pulse button and rule toggle per coil (with Left/Right arrow-key shortcuts for bench testing — there's no keyboard on the real cabinet), lamp mode cycling, arm/disarm all rules, and round-trip ping — all generated from the config.
+- A scrolling log of everything crossing the link in both directions, plus any config problems.
 
 Full walkthrough of every control: [`Docs/diagnostics-panel.md`](Docs/diagnostics-panel.md).
 
 ## Serial protocol
 
-Plain ASCII, one message per line, ending in `\n`. Full message tables (Teensy→Godot and Godot→Teensy) and link/watchdog behavior are documented in `CLAUDE.md`, with a walked-through example session in [`Docs/serial-protocol.md`](Docs/serial-protocol.md). Short version: Godot says `HELLO` to arm the link and sends `HB` every 100ms to keep it alive; the Teensy runs a 500ms watchdog that kills all outputs and disables hardware rules the moment Godot goes quiet.
+Plain ASCII, one message per line, ending in `\n`. Full message tables (Teensy→Godot and Godot→Teensy) and link/watchdog behavior are documented in `CLAUDE.md`, with a walked-through example session in [`Docs/serial-protocol.md`](Docs/serial-protocol.md). Short version: Godot says `HELLO`, the board answers with its type and serial number, Godot sends the board its layout as `CFG` lines, then sends `HB` every 100ms to keep the link alive; the board runs a 500ms watchdog that kills all outputs and disarms all rules the moment Godot goes quiet.
 
-**Any protocol change is made on both sides in the same change** — the `.ino` sketch, `pinball_io.gd`, and the protocol table in `CLAUDE.md` all move together.
+**Any protocol change is made on both sides in the same change** — `Firmware/pinio/pinio.ino`, `board_link.gd`/`pinball_io.gd`, and the protocol table in `CLAUDE.md` all move together.
 
 ## Roadmap
 
 1. ✅ Serial link, test sketch, `PinballIO` autoload, diagnostics panel.
-2. Game state skeleton: attract → game start → ball in play → drain → next ball → game over, enabling/disabling hardware rules per state.
-3. Real flipper state machine on the Teensy (24V pull-in → EOS → PWM hold) plus flipper enable/disable over the protocol.
-4. Shared hardware map for the real playfield (switches/coils/lamps get names instead of magic numbers).
+2. Configurable I/O (in progress): ✅ always-loaded base scene, ✅ generic PINIO 0.2 firmware with the configurable coil rule (flippers, slings, pops), ✅ machine config + name-based `PinballIO`. Next: a config page to edit it all in the UI, several boards at once, and Arduino Uno support.
+3. Game state skeleton: attract → game start → ball in play → drain → next ball → game over, enabling/disabling hardware rules per state.
+4. Real playfield layout in the machine config.
 5. Audio, video, and a score display in Godot. Video cutscenes need validating on real Pi 4 hardware before much production time goes into them — see "Deploying to a Raspberry Pi" above.
 
 ## Hardware

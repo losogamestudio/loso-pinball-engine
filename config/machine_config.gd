@@ -1,0 +1,299 @@
+extends Node
+## MachineConfig — autoload holding this machine's I/O layout.
+##
+## Which boards exist, and which pin on which board is which switch, coil, or
+## lamp. PinballIO turns this into CFG lines for each board after it links.
+## Game code never needs pin numbers: it uses the names defined here.
+##
+## Loaded from user://machine_config.json if it exists (saved by the config
+## page), otherwise from the default that ships with the project:
+## res://config/machine_config.default.json.
+##
+## Register under Project Settings > Globals > Autoload as "MachineConfig",
+## ABOVE PinballIO (autoloads start in list order, and PinballIO needs this).
+
+signal changed   ## the layout was loaded or replaced; linked boards get re-configured
+
+const USER_PATH := "user://machine_config.json"
+const DEFAULT_PATH := "res://config/machine_config.default.json"
+
+## Limits the firmware enforces (keep in sync with Firmware/pinio/pinio.ino).
+const MAX_FULL_MS := 255
+const MAX_RECYCLE_MS := 5000
+const MAX_DEBOUNCE_MS := 100
+const MIN_PWM_HZ := 100
+const MAX_PWM_HZ := 100000
+
+var boards: Array[IoDefs.BoardDef] = []
+var inputs: Array[IoDefs.InputDef] = []
+var coils: Array[IoDefs.CoilDef] = []
+var lamps: Array[IoDefs.LampDef] = []
+var loaded_from := ""   ## which file the current layout came from
+
+
+func _ready() -> void:
+	load_config()
+
+
+# ---------------------------------------------------------------- load / save
+
+## Load the saved layout, or the project default if nothing is saved yet.
+func load_config() -> void:
+	var path := USER_PATH if FileAccess.file_exists(USER_PATH) else DEFAULT_PATH
+	var text := FileAccess.get_file_as_string(path)
+	var data: Variant = JSON.parse_string(text)
+	if not data is Dictionary:
+		push_error("MachineConfig: could not read %s, starting empty" % path)
+		data = {}
+	_apply_dict(data)
+	loaded_from = path
+	for problem in validate():
+		push_warning("MachineConfig (%s): %s" % [path, problem])
+	changed.emit()
+
+
+## Save the current layout to user:// so it survives restarts.
+func save_config() -> Error:
+	var file := FileAccess.open(USER_PATH, FileAccess.WRITE)
+	if file == null:
+		return FileAccess.get_open_error()
+	file.store_string(JSON.stringify(to_dict(), "\t"))
+	loaded_from = USER_PATH
+	return OK
+
+
+## Forget the saved layout and go back to the project default.
+func reset_to_default() -> void:
+	if FileAccess.file_exists(USER_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(USER_PATH))
+	load_config()
+
+
+func to_dict() -> Dictionary:
+	return {
+		"version": 1,
+		"boards": boards.map(func(b: IoDefs.BoardDef) -> Dictionary: return b.to_dict()),
+		"inputs": inputs.map(func(i: IoDefs.InputDef) -> Dictionary: return i.to_dict()),
+		"coils": coils.map(func(c: IoDefs.CoilDef) -> Dictionary: return c.to_dict()),
+		"lamps": lamps.map(func(l: IoDefs.LampDef) -> Dictionary: return l.to_dict()),
+	}
+
+
+func _apply_dict(data: Dictionary) -> void:
+	boards.clear()
+	inputs.clear()
+	coils.clear()
+	lamps.clear()
+	for d: Dictionary in data.get("boards", []):
+		boards.append(IoDefs.BoardDef.from_dict(d))
+	for d: Dictionary in data.get("inputs", []):
+		inputs.append(IoDefs.InputDef.from_dict(d))
+	for d: Dictionary in data.get("coils", []):
+		coils.append(IoDefs.CoilDef.from_dict(d))
+	for d: Dictionary in data.get("lamps", []):
+		lamps.append(IoDefs.LampDef.from_dict(d))
+
+
+# ---------------------------------------------------------------- lookups
+
+func find_board(id: StringName) -> IoDefs.BoardDef:
+	for b in boards:
+		if b.id == id:
+			return b
+	return null
+
+
+func find_input(input_name: StringName) -> IoDefs.InputDef:
+	for i in inputs:
+		if i.name == input_name:
+			return i
+	return null
+
+
+func find_coil(coil_name: StringName) -> IoDefs.CoilDef:
+	for c in coils:
+		if c.name == coil_name:
+			return c
+	return null
+
+
+func find_lamp(lamp_name: StringName) -> IoDefs.LampDef:
+	for l in lamps:
+		if l.name == lamp_name:
+			return l
+	return null
+
+
+# ---------------------------------------------------------------- validation
+
+## Everything wrong with the current layout, in plain words. Empty = good.
+## Mirrors the checks the firmware does, so problems show up in Godot with
+## names attached instead of as "ERR CFG bad pin" from a board.
+func validate() -> PackedStringArray:
+	var errors: PackedStringArray = []
+	var names := {}                    # every name in use -> true (names must be unique)
+	var used_pins := {}                # "board:pin" -> name using it
+
+	var board_ids := {}
+	for b in boards:
+		if board_ids.has(b.id):
+			errors.append("board '%s' is defined twice" % b.id)
+		board_ids[b.id] = true
+		if not BoardTypes.has_type(b.type):
+			errors.append("board '%s' has unknown type '%s'" % [b.id, b.type])
+		if b.pwm_hz < MIN_PWM_HZ or b.pwm_hz > MAX_PWM_HZ:
+			errors.append("board '%s' PWM must be %d..%d Hz" % [b.id, MIN_PWM_HZ, MAX_PWM_HZ])
+
+	for i in inputs:
+		_check_name(i.name, "input", names, errors)
+		var b := _check_board(i.board, i.name, errors)
+		if b:
+			_check_pin(b, i.pin, BoardTypes.CAP_IN, i.name, used_pins, errors)
+		if i.debounce_ms < 0 or i.debounce_ms > MAX_DEBOUNCE_MS:
+			errors.append("input '%s' debounce must be 0..%d ms" % [i.name, MAX_DEBOUNCE_MS])
+
+	for c in coils:
+		_check_name(c.name, "coil", names, errors)
+		var b := _check_board(c.board, c.name, errors)
+		if b:
+			_check_pin(b, c.pin, BoardTypes.CAP_OUT, c.name, used_pins, errors)
+			if c.hold_pct > 0 and c.hold_pct < 100 and not BoardTypes.pin_has(b.type, c.pin, BoardTypes.OUT_PWM):
+				errors.append("coil '%s' has a hold %% but pin %d can't do PWM" % [c.name, c.pin])
+		if c.full_ms < 1 or c.full_ms > MAX_FULL_MS:
+			errors.append("coil '%s' full power must be 1..%d ms" % [c.name, MAX_FULL_MS])
+		if c.hold_pct < 0 or c.hold_pct > 100:
+			errors.append("coil '%s' hold must be 0..100 %%" % c.name)
+		if c.recycle_ms < 0 or c.recycle_ms > MAX_RECYCLE_MS:
+			errors.append("coil '%s' recycle must be 0..%d ms" % [c.name, MAX_RECYCLE_MS])
+		_check_coil_input(c, c.trigger, "trigger", errors)
+		_check_coil_input(c, c.eos, "EOS", errors)
+		if c.trigger != &"" and c.trigger == c.eos:
+			errors.append("coil '%s' uses the same input for trigger and EOS" % c.name)
+
+	for l in lamps:
+		_check_name(l.name, "lamp", names, errors)
+		var b := _check_board(l.board, l.name, errors)
+		if b:
+			_check_pin(b, l.pin, BoardTypes.CAP_OUT, l.name, used_pins, errors)
+
+	for b in boards:
+		if not BoardTypes.has_type(b.type):
+			continue
+		var plan := build_plan(b)
+		var counts := {
+			"inputs": plan.input_names.size(),
+			"coils": plan.coil_names.size(),
+			"lamps": plan.lamp_names.size(),
+		}
+		for kind: String in counts:
+			var count: int = counts[kind]
+			var most := BoardTypes.limit(b.type, "max_" + kind)
+			if count > most:
+				errors.append("board '%s' has %d %s, its limit is %d" % [b.id, count, kind, most])
+	return errors
+
+
+func _check_name(item_name: StringName, kind: String, names: Dictionary, errors: PackedStringArray) -> void:
+	if item_name == &"":
+		errors.append("a %s has no name" % kind)
+	elif String(item_name).contains(" "):
+		errors.append("%s '%s': names can't contain spaces" % [kind, item_name])
+	elif names.has(item_name):
+		errors.append("the name '%s' is used more than once" % item_name)
+	names[item_name] = true
+
+
+func _check_board(board_id: StringName, item_name: StringName, errors: PackedStringArray) -> IoDefs.BoardDef:
+	var b := find_board(board_id)
+	if b == null:
+		errors.append("'%s' is on board '%s', which doesn't exist" % [item_name, board_id])
+	return b
+
+
+func _check_pin(b: IoDefs.BoardDef, pin: int, cap: int, item_name: StringName,
+		used_pins: Dictionary, errors: PackedStringArray) -> void:
+	var reason := BoardTypes.reserved_reason(b.type, pin)
+	if reason != "":
+		errors.append("'%s': pin %d is reserved (%s)" % [item_name, pin, reason])
+	elif not BoardTypes.pin_has(b.type, pin, cap):
+		var role := "an input" if cap == BoardTypes.CAP_IN else "an output"
+		errors.append("'%s': pin %d can't be %s on a %s" % [item_name, pin, role, b.type])
+	var key := "%s:%d" % [b.id, pin]
+	if used_pins.has(key):
+		errors.append("'%s' and '%s' both use pin %d on board '%s'" % [used_pins[key], item_name, pin, b.id])
+	used_pins[key] = item_name
+
+
+func _check_coil_input(c: IoDefs.CoilDef, input_name: StringName, role: String, errors: PackedStringArray) -> void:
+	if input_name == &"":
+		return
+	var i := find_input(input_name)
+	if i == null:
+		errors.append("coil '%s' %s '%s' isn't a defined input" % [c.name, role, input_name])
+	elif i.board != c.board:
+		# The board runs the rule on its own, so it can only see its own switches.
+		errors.append("coil '%s' %s '%s' is on a different board" % [c.name, role, input_name])
+
+
+# ---------------------------------------------------------------- per-board plan
+
+## Work out what [param board] gets told: local numbers for each of its
+## inputs/coils/lamps (in config order) and the CFG lines to send.
+## Doesn't validate; call validate() first.
+func build_plan(board: IoDefs.BoardDef) -> IoDefs.BoardPlan:
+	var plan := IoDefs.BoardPlan.new()
+	plan.board = board
+	plan.lines.append("CFG PWM %d" % board.pwm_hz)
+
+	for i in inputs:
+		if i.board != board.id:
+			continue
+		plan.lines.append("CFG IN %d %d %s %d" % [plan.input_names.size(), i.pin, "NC" if i.nc else "NO", i.debounce_ms])
+		plan.input_names.append(i.name)
+
+	for c in coils:
+		if c.board != board.id:
+			continue
+		plan.lines.append("CFG COIL %d %d %d %d %s %s %d" % [
+			plan.coil_names.size(), c.pin, c.full_ms, c.hold_pct,
+			_input_ref(plan, c.trigger), _input_ref(plan, c.eos), c.recycle_ms])
+		plan.coil_names.append(c.name)
+
+	for l in lamps:
+		if l.board != board.id:
+			continue
+		plan.lines.append("CFG LAMP %d %d" % [plan.lamp_names.size(), l.pin])
+		plan.lamp_names.append(l.name)
+
+	plan.fingerprint = layout_hash(plan.lines)
+	plan.lines.append("CFG DONE")
+	return plan
+
+
+## The board's fingerprint for a layout: 32-bit FNV-1a over every CFG line
+## (not CLEAR or DONE), each followed by "\n", as 8 hex digits. The firmware
+## computes the same thing, so equal hashes mean the board already runs this
+## exact layout and doesn't need it sent again.
+static func layout_hash(lines: PackedStringArray) -> String:
+	var bytes := PackedByteArray()
+	for line in lines:
+		if line == "CFG DONE" or line == "CFG CLEAR":
+			continue
+		bytes.append_array((line + "\n").to_utf8_buffer())
+	return "%08X" % fnv1a(bytes)
+
+
+## 32-bit FNV-1a hash (a tiny, well-known checksum; easy to match in C).
+static func fnv1a(data: PackedByteArray) -> int:
+	var h := 2166136261
+	for b in data:
+		h = ((h ^ b) * 16777619) & 0xFFFFFFFF
+	return h
+
+
+## The board's number for an input, or "-" for none.
+func _input_ref(plan: IoDefs.BoardPlan, input_name: StringName) -> String:
+	if input_name == &"":
+		return "-"
+	var index := plan.input_names.find(input_name)
+	return str(index) if index != -1 else "-"

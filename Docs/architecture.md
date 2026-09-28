@@ -17,25 +17,26 @@ So: **Teensy 4.x** for problem 1, **Godot 4 (GDScript)** for problem 2, talking 
 
 ## What stays on the Teensy, and why
 
-- **Flippers.** Each coil is a single-winding 12V coil overdriven at 24V for pull-in, switched down to roughly 50% PWM hold once the EOS (end-of-stroke) switch trips, and released the instant the flipper button is released. Dual-wound coils are ruled out. This whole state machine — button press → full power → EOS closes → PWM hold → button release → off — has to react within microcontroller-grade timing, so it lives entirely in firmware. Godot never sees a flipper button press.
-- **Slingshots and pop bumpers, as local hardware rules.** The pattern is: switch closes → the Teensy fires the coil *immediately*, in the same firmware pass → *then* it tells Godot `FIRED <rule>` after the fact. Godot finds out a slingshot fired; it never causes one to fire. This matters because a slingshot needs to respond faster than a round-trip over serial plus a game-engine frame can reliably guarantee, and because losing the serial link should never mean losing slingshots (or, from a safety standpoint, should mean the opposite — see the watchdog below).
+- **Flippers.** Each coil is a single-winding 12V coil overdriven at 24V for pull-in, switched down to roughly 50% PWM hold once the EOS (end-of-stroke) switch trips, and released the instant the flipper button is released. Dual-wound coils are ruled out. This whole state machine — button press → full power → EOS closes → PWM hold → button release → off — has to react within microcontroller-grade timing, so it lives entirely in firmware. In PINIO 0.2 a flipper isn't special code: it's a coil configured with a trigger (the button), an EOS input and a hold %, running the same generic coil rule as everything else (see [Serial protocol](serial-protocol.md)). Godot hears about the button press as an ordinary switch event, after the flipper has already moved.
+- **Slingshots and pop bumpers, as local hardware rules.** The pattern is: switch closes → the Teensy fires the coil *immediately*, in the same firmware pass → *then* it tells Godot `FIRED <coil>` after the fact. Godot finds out a slingshot fired; it never causes one to fire. This matters because a slingshot needs to respond faster than a round-trip over serial plus a game-engine frame can reliably guarantee, and because losing the serial link should never mean losing slingshots (or, from a safety standpoint, should mean the opposite — see the watchdog below).
 - **Switch debouncing.** Raw switch input is noisy; the Teensy is the one place that turns "raw" into a clean `SW <id> <0|1>` transition, so Godot only ever sees stable state changes.
 - **Coil safety.** Two independent mechanisms: a hard cap on every coil's pulse length (`MAX_PULSE_MS`, currently 255ms in the practice sketch) enforced in firmware regardless of what Godot asks for, and a **watchdog** that turns every output off and disables every hardware rule the moment Godot goes quiet for too long (500ms in the current protocol). Godot crashing, hanging, or a USB cable falling out should always fail toward "everything off," never toward "something stuck on."
 
 ## What Godot owns
 
-- **Enabling and disabling hardware rules.** Godot can turn `SLING_L` (or any future rule) on or off — for example, off during tilt or between balls — but it never fires a rule directly. The rule always lives and fires on the Teensy; Godot just decides whether that rule is currently armed.
+- **Configuring and arming hardware rules.** Godot *describes* each coil to the board (pin, full-power time, hold %, trigger input, EOS input, recycle time) from the [machine config](configuration.md), and arms or disarms its rule, for example off during tilt or between balls. It never fires a rule itself. The rule always runs on the board; Godot only decides what it looks like and whether it's currently armed.
 - **Scoring, modes, ball tracking, audio, video, and the UI.** All the parts of a pinball game that are really a game-engine problem, not a real-time-control problem.
 - **One-off output commands that aren't time-critical in the same way**: firing a kickout coil to launch a ball, resetting drop targets, setting lamp/LED state. These go out as explicit serial commands (`PULSE`, `LED`, ...) whenever Godot's game logic decides they should happen.
 
 ## Data flow, end to end
 
 ```
-Playfield switch  →  Teensy (debounce)  →  serial: SW <id> <state>  →  PinballIO autoload  →  switch_changed signal  →  game logic
-game logic  →  PinballIO.pulse_coil() / set_led() / set_rule()  →  serial: PULSE / LED / RULE  →  Teensy  →  physical output
+startup:     MachineConfig (names → board + pin)  →  PinballIO  →  serial: CFG ... lines  →  board knows its layout
+Playfield switch  →  board (debounce, run any coil rule)  →  serial: SW <n> <state>  →  PinballIO (n → name)  →  switch_changed(&"sling_left_switch", true)  →  game logic
+game logic  →  PinballIO.pulse_coil(&"kickout") / set_lamp() / set_coil_rule()  →  (name → board + n)  →  serial: PULSE / LED / RULE  →  board  →  physical output
 ```
 
-Godot code never talks to the serial port directly — everything goes through the `PinballIO` autoload (see [Serial protocol](serial-protocol.md) for the wire format, and `pinball_io.gd` for the actual signal/function surface). That's a deliberate choke point: one place owns the link, retries, heartbeat, and reconnect logic, and everything else just reacts to signals.
+Godot code never talks to the serial port directly. Everything goes through the `PinballIO` autoload (see [Serial protocol](serial-protocol.md) for the wire format, and `pinball_io.gd` for the signal/function surface). That's a deliberate choke point: one place owns every link, the retries, heartbeats, reconnects and configuration, and everything else just reacts to signals using names. Each board's link is a `BoardLink` object, so several boards can be connected at once; a coil's trigger and EOS must be on the same board as the coil, because that board runs the rule on its own.
 
 ## Driver hardware (for reference)
 

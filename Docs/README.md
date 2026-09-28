@@ -3,6 +3,7 @@
 This folder is the deeper write-up of the whole system. The root [`README.md`](../README.md) is the quick pitch and quick-start; these pages go further.
 
 - **[Architecture](architecture.md)** — the Teensy/Godot split, why it's built this way, the driver hardware.
+- **[Machine configuration](configuration.md)** — the one file that says which pin on which board is which switch, coil or lamp, and how each coil's rule behaves.
 - **[Serial protocol](serial-protocol.md)** — the wire protocol between the Teensy and Godot, with a walked-through example session.
 - **[Getting started](getting-started.md)** — desktop dev setup, from a blank machine to a working link on the bench.
 - **[Diagnostics panel](diagnostics-panel.md)** — what every control in the test/diagnostics scene does and why it's there.
@@ -12,4 +13,4 @@ For coding conventions and the terse, authoritative project spec that Claude Cod
 
 ## Status
 
-This is a living set of docs for a project that's still early — expect it to grow alongside the game. Right now it covers everything through the diagnostics panel and Raspberry Pi deployment (roadmap step 1). As the game-state skeleton, real flipper firmware, hardware map, and audio/video land, they'll get their own pages here.
+This is a living set of docs for a project that's still early — expect it to grow alongside the game. Right now it covers the serial link, the configurable I/O (machine config, PINIO 0.2 firmware with its flipper/sling coil rule), the diagnostics panel, and Raspberry Pi deployment. As the config page, multi-board support, the game-state skeleton, and audio/video land, they'll get their own pages or sections here.

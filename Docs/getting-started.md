@@ -6,8 +6,8 @@ This walks through going from a fresh checkout to a live serial link on your des
 
 - **Godot 4.4 or later**, the standard build (not the .NET/C# build — this project is GDScript only).
 - **Arduino IDE** with **Teensyduino** installed, for building and flashing the firmware.
-- A **Teensy 4.x** board.
-- Some breadboard hardware to stand in for the real playfield while there's no real machine yet: 4 pushbuttons (or jumper wires to ground) for switches, a couple of LEDs with resistors for "coils," a couple more for lamps, and optionally a potentiometer for the analog input. Exact pins are in the wiring comment at the top of `Firmware/pinio_test/pinio_test.ino`.
+- A **Teensy 4.1** board.
+- Optional breadboard hardware to stand in for the real playfield: 3 pushbuttons (or jumper wires to ground) and a few LEDs with resistors. The pins are in step 3. Without any of it you can still link, configure the board, and watch the status LED.
 
 ## Steps
 
@@ -21,30 +21,41 @@ git clone https://github.com/losogamestudio/loso-pinball-engine.git
 
 Point Godot at the cloned folder and open it. There's nothing to install for the serial plugin — `addons/gdserial` is vendored directly in the repo and already enabled in `project.godot`. If you ever want to double-check it's active: **Project → Project Settings → Plugins** should show GdSerial checked.
 
-### 3. Flash the practice firmware
+### 3. Flash the firmware
 
-Open `Firmware/pinio_test/pinio_test.ino` in the Arduino IDE. Select your Teensy board and **USB Type: "Serial"** under Tools, then upload. Baud rate doesn't matter for Teensy's USB serial (it's always full USB speed), but the code sets 115200 anyway since some tools want a value.
+Open `Firmware/pinio/pinio.ino` in the Arduino IDE. Under Tools, select **Teensy 4.1** and **USB Type: "Serial"**, then upload. Baud rate doesn't matter for Teensy's USB serial (it's always full USB speed), but the code uses 115200 anyway because some tools want a value.
 
-Wire up the practice hardware per the comment at the top of the sketch:
+The firmware is generic: it doesn't know your playfield until Godot sends it the layout from the [machine config](configuration.md). With the Teensy's USB port pointing up, the **left** header pins are outputs and the **right** header pins are inputs. The shipped default config uses:
 
-| Item | Pin | Notes |
-|---|---|---|
-| Switches 0–3 | 2, 3, 4, 5 | `INPUT_PULLUP`, pressed = LOW |
-| Coil 0 (sling stand-in) | 13 | Onboard LED |
-| Coil 1 | 6 | LED + 330Ω |
-| Lamps 0–1 | 7, 8 | LED + 330Ω |
-| Analog 0 | A0 | Pot, 3.3V only. `USE_ANALOG` is `false` until you actually wire one up |
+| Name | Kind | Pin | Stand-in |
+|---|---|---|---|
+| `flipper_left_button` | input | 33 | pushbutton to GND |
+| `flipper_left_eos` | input | 34 | pushbutton to GND |
+| `sling_left_switch` | input | 35 | pushbutton to GND |
+| `flipper_left` | coil, 60 ms full, 50% hold | 2 | LED + 330Ω to GND |
+| `sling_left` | coil, 40 ms pulse | 26 | LED + 330Ω to GND |
+| `kickout` | coil, 30 ms pulse, Godot-fired | 3 | LED + 330Ω to GND |
+| `lamp_0` | lamp | 27 | LED + 330Ω to GND |
 
-You don't need real coils or lamps to try this out — LEDs make the pulses and blink modes visible, which is the point of a practice rig.
+Inputs are **3.3 V only**: wire switches to GND, never to 5 V. LEDs make pulses, holds (dimmer) and blinking visible, which is the point of a practice rig. On real driver boards, every MOSFET gate needs a pulldown resistor, because the pins float while the Teensy boots or is being flashed.
+
+The onboard LED (pin 13) is the **status LED**:
+
+| Pattern | Meaning |
+|---|---|
+| slow blink | waiting for Godot |
+| medium blink | linked, waiting for its config |
+| solid | configured and running |
+| fast blink | watchdog tripped |
 
 ### 4. Run the project
 
 Hit Play (or run it directly — see below). The base scene, `main.tscn`, opens on an attract-mode placeholder. Press **F1** to open the [diagnostics panel](diagnostics-panel.md) (F1 again closes it):
 
 1. Pick your Teensy's port from the dropdown (it'll show up as something like `COM9` on Windows or `/dev/ttyACM0` on Linux) and hit **Connect**.
-2. The status label should go from "Port open, waiting for Teensy…" to "Linked: PINIO 0.1" within a second, and the four switch lamps should reflect whatever's currently pressed.
-3. The little green "Teensy HB" lamp should start pulsing once a second — that's proof the Teensy is actually alive and talking, not just that the OS thinks the port is open.
-4. Try the coil buttons (or the **Left/Right arrow keys** — see [diagnostics panel](diagnostics-panel.md) for why keyboard shortcuts exist here at all), toggle an LED's mode, flip on the "Sling rule" checkbox and press switch 0 to see `FIRED SLING_L` show up in the log and the score bump.
+2. Within a second the status goes "Linked on …: PINIO 0.2, sending config…", then "Ready: board 'main' configured". The log shows the `CFG` lines going out and `ACK CFG 3 3 1 <fingerprint>` coming back, and the Teensy's status LED goes solid. Click **Burn layout to board** to store it on the Teensy: from then on it boots configured, and on the next connect Godot sees the fingerprints match and sends nothing.
+3. The green "Board HB" lamp pulses once a second. That's proof the Teensy is alive and talking, not just that the OS thinks the port is open.
+4. Try the coil buttons (or the **Left/Right arrow keys**; see [diagnostics panel](diagnostics-panel.md) for why keyboard shortcuts exist at all) and cycle the lamp's mode. Then check **Rule: flipper_left_button → flipper_left** and hold the button on pin 33: the LED on pin 2 is bright for 60 ms, then dims to 50% until you let go (pressing 34, the EOS, dims it sooner). Arm the sling rule and press 35 to see `FIRED 1` in the log and the score jump.
 5. Once it's linked the way you want, check **"Auto-connect at startup"** — next time you run the project, it'll remember that port and reconnect on its own.
 
 ### 5. Running headless (no window, useful for scripting/CI)
@@ -55,9 +66,18 @@ godot --headless --path . --quit
 
 This loads the project and immediately quits — a quick way to confirm there are no GDScript parse errors after making a change, without needing a display.
 
+There's also a no-hardware test of the config and link code, using a fake board:
+
+```sh
+godot --headless --path . -s res://test/test_config_link.gd
+```
+
+It prints `PASS`/`FAIL` per check and ends with `ALL PASSED`.
+
 ## Where to go next
 
 - [Architecture](architecture.md) if you want the *why* behind the Teensy/Godot split before changing anything.
+- [Machine configuration](configuration.md) to change which pin is which switch, coil or lamp.
 - [Serial protocol](serial-protocol.md) if you're touching the wire format.
 - [Diagnostics panel](diagnostics-panel.md) for what every control on screen actually does.
 - [Deploying to a Raspberry Pi](raspberry-pi.md) once you're ready to get off the desktop.
