@@ -76,6 +76,7 @@ The real cabinet target is a **Raspberry Pi 4 or later** — desktops are for de
 
 The base scene (`main.tscn`) starts on an attract-mode placeholder, and **F1** opens a **diagnostics panel** for the serial link and I/O. The panel is meant to keep growing into the full diagnostics page for the real machine:
 
+- **F1 → Setup**: add and edit coils with a step-by-step wizard (flipper / sling / kicker / diverter presets, output pin, trigger and end-of-stroke switches, power, then live test-firing before saving), edit switches, and burn the layout to the board.
 - The whole I/O layout comes from one machine config file. On link, Godot checks it and sends it to the board, which then runs flippers (trigger → full power → EOS → PWM hold), slings and pops entirely by itself.
 - Port picker with auto-connect: remembers the last port a board actually answered on, and can reconnect to it automatically on startup.
 - Live link/board status, plus a heartbeat lamp that pulses on every `HB` from the board — so a frozen board is visibly different from a merely-quiet one.
@@ -93,7 +94,7 @@ Plain ASCII, one message per line, ending in `\n`. Full message tables (Teensy�
 ## Roadmap
 
 1. ✅ Serial link, test sketch, `PinballIO` autoload, diagnostics panel.
-2. Configurable I/O (in progress): ✅ always-loaded base scene, ✅ generic PINIO 0.2 firmware with the configurable coil rule (flippers, slings, pops), ✅ machine config + name-based `PinballIO`. Next: a config page to edit it all in the UI, several boards at once, and Arduino Uno support.
+2. Configurable I/O (in progress): ✅ always-loaded base scene, ✅ generic PINIO 0.2 firmware with the configurable coil rule (flippers, slings, pops), ✅ machine config + name-based `PinballIO`, ✅ burn layout to board, ✅ Setup tab with the coil wizard. Next: several boards at once, WS2812B LED chains for lighting, and Arduino Uno support.
 3. Game state skeleton: attract → game start → ball in play → drain → next ball → game over, enabling/disabling hardware rules per state.
 4. Real playfield layout in the machine config.
 5. Audio, video, and a score display in Godot. Video cutscenes need validating on real Pi 4 hardware before much production time goes into them — see "Deploying to a Raspberry Pi" above.

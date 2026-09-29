@@ -124,6 +124,99 @@ func find_lamp(lamp_name: StringName) -> IoDefs.LampDef:
 	return null
 
 
+# ---------------------------------------------------------------- editing (used by the setup page)
+
+## A copy of the whole layout, to put back with restore() if an edit is cancelled.
+func snapshot() -> Dictionary:
+	return to_dict()
+
+
+## Replace the layout with an earlier snapshot. Emits `changed` (so linked
+## boards get it) unless [param emit] is false.
+func restore(data: Dictionary, emit := true) -> void:
+	_apply_dict(data)
+	if emit:
+		changed.emit()
+
+
+## Tell everyone (PinballIO in particular) that the layout was edited, so
+## linked boards run the new layout right away. Doesn't save to disk.
+func apply() -> void:
+	changed.emit()
+
+
+## Pins on [param board_id] that have [param caps] and aren't used by anything
+## (except [param keep_pin], so an item being edited can keep its own pin).
+func free_pins(board_id: StringName, caps: int, keep_pin := -1) -> Array[int]:
+	var b := find_board(board_id)
+	var out: Array[int] = []
+	if b == null:
+		return out
+	var used := {}
+	for i in inputs:
+		if i.board == board_id:
+			used[i.pin] = true
+	for c in coils:
+		if c.board == board_id:
+			used[c.pin] = true
+	for l in lamps:
+		if l.board == board_id:
+			used[l.pin] = true
+	for pin in BoardTypes.pins_with(b.type, caps):
+		if pin == keep_pin or not used.has(pin):
+			out.append(pin)
+	return out
+
+
+## Inputs on [param board_id], in config order.
+func inputs_on(board_id: StringName) -> Array[IoDefs.InputDef]:
+	var out: Array[IoDefs.InputDef] = []
+	for i in inputs:
+		if i.board == board_id:
+			out.append(i)
+	return out
+
+
+## Descriptions of every coil that uses [param input_name], e.g. "flipper_left (trigger)".
+func coils_using_input(input_name: StringName) -> PackedStringArray:
+	var out: PackedStringArray = []
+	for c in coils:
+		if c.trigger == input_name:
+			out.append("%s (trigger)" % c.name)
+		if c.eos == input_name:
+			out.append("%s (EOS)" % c.name)
+	return out
+
+
+## True if some input, coil or lamp other than [param except] already has this name.
+func is_name_taken(item_name: StringName, except: StringName = &"") -> bool:
+	if item_name == except:
+		return false
+	return find_input(item_name) != null or find_coil(item_name) != null or find_lamp(item_name) != null
+
+
+## [param base] if it's free, otherwise base_2, base_3, ...
+func unique_name(base: String) -> StringName:
+	var candidate := base
+	var n := 2
+	while is_name_taken(StringName(candidate)):
+		candidate = "%s_%d" % [base, n]
+		n += 1
+	return StringName(candidate)
+
+
+func remove_coil(coil_name: StringName) -> void:
+	coils.assign(coils.filter(func(c: IoDefs.CoilDef) -> bool: return c.name != coil_name))
+
+
+## Remove an input. Refuses (returns false) while a coil still uses it.
+func remove_input(input_name: StringName) -> bool:
+	if not coils_using_input(input_name).is_empty():
+		return false
+	inputs.assign(inputs.filter(func(i: IoDefs.InputDef) -> bool: return i.name != input_name))
+	return true
+
+
 # ---------------------------------------------------------------- validation
 
 ## Everything wrong with the current layout, in plain words. Empty = good.

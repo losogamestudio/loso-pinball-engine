@@ -62,6 +62,9 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	# Keyboard stand-in for the first two coils' buttons — there's no keyboard
 	# on the real cabinet, so this only ever exists for bench-testing.
+	# Only while this tab is showing (_input runs even for hidden nodes).
+	if not is_visible_in_tree():
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key_event := event as InputEventKey
 		var coil_index := -1

@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://modes/attract.tscn" id="2_attract"]
-[ext_resource type="PackedScene" path="res://control.tscn" id="3_service"]
+[ext_resource type="PackedScene" path="res://config/service_menu.tscn" id="3_service"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_main")

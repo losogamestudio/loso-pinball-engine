@@ -57,11 +57,13 @@ res://
 ├── pinball_io.gd             # Autoload "PinballIO": all board links → named signals
 ├── board_link.gd             # class BoardLink: one serial link speaking PINIO 0.2 (no GdSerial inside)
 ├── boards/board_types.gd     # class BoardTypes: what each board type's pins can do (mirror of board_<type>.h)
-├── config/                   # Autoload "MachineConfig" + IoDefs records + machine_config.default.json
+├── config/                   # Autoload "MachineConfig", IoDefs records, machine_config.default.json,
+│                             #   and the F1 service menu: service_menu.tscn (Setup + Diagnostics tabs),
+│                             #   setup_page.gd, coil_wizard.gd, input_editor.gd, ui_kit.gd (UiKit helpers)
 ├── test/                     # headless tests (test_config_link.gd)
 ├── main.tscn / main.gd       # Base scene (the main scene): always loaded, hosts modes + service page
 ├── modes/                    # Mode scenes swapped into Main's ModeHost (attract.tscn placeholder so far)
-├── control.tscn              # Debug/test panel scene (root Control + test_panel.gd), shown as the F1 service page
+├── control.tscn              # Diagnostics panel (root Control + test_panel.gd), the Diagnostics tab of the F1 menu
 ├── test_panel.gd
 └── Firmware/
     └── pinio/                      # PINIO 0.2 generic firmware: pinio.ino + board_<type>.h (Arduino IDE + Teensyduino)
@@ -187,7 +189,7 @@ Autoload **`MachineConfig`** (`config/machine_config.gd`), listed **above** Pinb
 
 ## Testing
 
-- **Without hardware**: `godot --headless --path . -s res://test/test_config_link.gd` checks MachineConfig validation, the CFG lines built from the default config, and the BoardLink handshake against a fake board. Tests live in `test/`. If a full `GdSerialManager` stub is ever added there, never ship it alongside the real plugin, because the class names would clash.
+- **Without hardware**: `godot --headless --path . -s res://test/test_config_link.gd` checks MachineConfig validation, the CFG lines built from the default config, and the BoardLink handshake against a fake board. `-s res://test/test_setup_ui.gd` drives the coil wizard and switch editor (always cancels, never writes user://). In `-s` mode, scripts that use autoload names must be `load()`ed at runtime, not preloaded. Tests live in `test/`. If a full `GdSerialManager` stub is ever added there, never ship it alongside the real plugin, because the class names would clash.
 - **Without Godot**: open the Arduino Serial Monitor (line ending "Newline"), send `HELLO`, `WD OFF`, then `CFG IN ...` / `CFG COIL ...` / `CFG DONE` lines (see the top of `Firmware/pinio/pinio.ino`), then `RULE ALL ON`, `PULSE 0`, `LED 0 BLINK`.
 - **Firmware compile check**: the Arduino IDE bundles `arduino-cli`: `arduino-cli compile --fqbn teensy:avr:teensy41 --warnings all Firmware/pinio`.
 - After changing GDScript, check that the project parses (`godot --headless --path . --quit` should show no script errors).
@@ -199,7 +201,9 @@ Autoload **`MachineConfig`** (`config/machine_config.gd`), listed **above** Pinb
    - ✅ Base scene (`main.tscn`, mode host, F1 service layer).
    - ✅ PINIO 0.2 generic firmware with the trigger/EOS/hold coil rule, which covers the real flipper state machine. Compiles; not yet bench-tested on wired pins.
    - ✅ MachineConfig + BoardTypes + BoardLink, and a name-based PinballIO.
-   - Config page UI (Boards / Inputs / Coils / Lamps tabs, Save & Apply).
+   - ✅ Burn layout to board (EEPROM, fingerprints in HELLO).
+   - ✅ Setup tab (F1): coil wizard (kind → name/pin → trigger/EOS, can create switches → power → review + live test → save), switch editor, delete, Burn to board. Edits are drafts (MachineConfig.snapshot/restore) until Save.
+   - Lamps: all lighting will be WS2812B LED chains (FastLED-style) on a few outputs. Not designed yet; the current CFG LAMP/LED on-off stays but has no setup UI.
    - Several boards at once (auto-scan ports, match by uid, machine fault if one drops).
    - Arduino Uno board support (`board_uno.h`).
    - Later: input expander (74HC165 / matrix), analog inputs as a configurable type, EOS-reopen re-pulse.

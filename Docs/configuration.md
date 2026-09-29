@@ -2,14 +2,32 @@
 
 Which pin on which board is which switch, coil, or lamp is **data, not code**. It lives in one config file that Godot reads at startup and sends to each board when it links. Game code never sees a pin number. It uses names like `flipper_left` and `sling_left_switch`.
 
-> A config page in the F1 service menu for editing all of this through the UI is the next build-out step. Until then, you edit the JSON file described below by hand.
+## The Setup tab (F1)
+
+Press **F1** and open the **Setup** tab. It lists every coil and switch, with **Edit** and **Delete** buttons and live lamps for the switches. The board row shows whether each board is connected and whether its layout is burned, with a **Burn to board** button when it isn't.
+
+**+ Add coil** opens a step-by-step wizard:
+
+1. **Kind**: Flipper, Slingshot/pop bumper, Kicker/eject, or Diverter/magnet. This only fills in starting values.
+2. **Name and output pin**: only free output pins are offered. A coil that holds only gets PWM pins.
+3. **Trigger and end-of-stroke switches**: pick "(none)", an existing switch, or **New switch on pin N**, which creates the switch for you (named after the coil, e.g. `flipper_left_button`, `flipper_left_eos`) with NO/NC and debounce options. Lamps show switches that are already live, so you can check wiring.
+4. **Power**: full-power ms, hold %, recycle ms, each with an explanation.
+5. **Review and test**: the draft is sent to the board straight away. **Fire once**, **Hold for 1 second** and **Arm the rule, then press the real switch** let you try it for real, and the trigger/EOS lamps show the switches live. Nothing is written to disk until **Save**. **Cancel** (or closing F1) puts the board and the layout back as they were.
+
+**+ Add switch** / **Edit** on a switch opens a one-page editor for its name, pin, NO/NC and debounce, with **Send to board to test** and a live lamp. Renaming a switch also renames it in every coil that uses it. A switch a coil still uses can't be deleted.
+
+After saving, press **Burn to board** so the Teensy keeps the layout at power-off.
+
+Lamps aren't in the Setup tab: lighting will be WS2812B LED chains, set up in a later version.
+
+The rest of this page describes the file the Setup tab edits. You can still edit it by hand.
 
 ## Where it lives
 
 | File | What it is |
 |---|---|
 | `res://config/machine_config.default.json` | The layout that ships with the project (in git). Used when nothing is saved. |
-| `user://machine_config.json` | This machine's saved layout. When it exists, it wins. The config page will write it. |
+| `user://machine_config.json` | This machine's saved layout. When it exists, it wins. The Setup tab writes it; "Reset to default layout" deletes it. |
 
 `user://` is Godot's per-user data folder, outside the project, so it's never committed. On Windows it's `%APPDATA%\Godot\app_userdata\Loso Pinball Engine\`; on Linux and the Pi it's `~/.local/share/godot/app_userdata/Loso Pinball Engine/`.
 
@@ -79,7 +97,7 @@ Just a `name`, `board` and output `pin`.
 
 ## Getting it onto the board
 
-When a board connects, Godot compares the board's layout fingerprint with its own. If they differ, it sends this file's layout to the board, which runs it straight away but only in RAM. **Burn layout to board** (F1 diagnostics panel) stores it in the board's EEPROM, so the board boots configured. This file stays the master copy: after changing it, burn again. See [Serial protocol](serial-protocol.md#burning-the-layout-and-fingerprints) for the details.
+When a board connects, Godot compares the board's layout fingerprint with its own. If they differ, it sends this file's layout to the board, which runs it straight away but only in RAM. **Burn to board** (F1 → Setup, or "Burn layout to board" on the Diagnostics tab) stores it in the board's EEPROM, so the board boots configured. This file stays the master copy: after changing it, burn again. See [Serial protocol](serial-protocol.md#burning-the-layout-and-fingerprints) for the details.
 
 ## Rules the config must follow
 
