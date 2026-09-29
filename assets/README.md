@@ -19,4 +19,4 @@ This repo is public, and some media is licensed and can't be redistributed. So *
 - this README
 - any `test/` folder, which holds the test sounds we generate ourselves with `tools/make_test_sounds.gd`
 
-The media gets from the PC to the Pi with Syncthing (or `scp`). See [Docs/audio-video.md](../Docs/audio-video.md). After new media arrives on the Pi, tap **Update Loso Pinball** so Godot imports it.
+The media gets from the PC to the Pi with Syncthing (or `scp`). See [Docs/audio-video.md](../Docs/audio-video.md). After new media arrives on the Pi, start (or restart) the game with the **Loso Pinball** icon: it imports new files as it starts.

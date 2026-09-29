@@ -32,6 +32,8 @@ The running **mode** decides. The engine only provides the calls.
 
 Signals: `sfx_played(name)`, `music_changed(name)`, `video_started(name)`, and `video_finished(name)`. `video_finished` also fires for a missing video, one frame later, so `await Media.video_finished` never hangs.
 
+**No sound on the Pi?** Godot uses the output selected on the Pi's desktop when the game starts. Pick the 3.5 mm jack (**AV Jack**) or your Bluetooth speaker under the taskbar speaker icon, then restart the game. See [Raspberry Pi: Sound](raspberry-pi.md#sound) for step-by-step checks.
+
 ## Volume and buses
 
 Sound goes through audio buses (`default_bus_layout.tres`; open the **Audio** panel at the bottom of the editor): **Master** feeds from **Music**, **SFX** and **Video**. It's the same idea as Unreal sound classes.
@@ -94,7 +96,7 @@ The GitHub repo is public and some media is licensed, so **media isn't in git**.
 2. On the PC: **Add Folder**, set the path to `D:\Dev\Godot\loso-pinball-engine\assets`, set **Folder Type** (Advanced tab) to **Send Only**, and share it with the Pi (Sharing tab).
 3. On the Pi, accept the folder. Set its path to `/home/yourusername/loso-pinball-engine/assets` and its **Folder Type** to **Receive Only**.
 
-From then on, anything you drop into `assets/` on the PC shows up on the Pi within seconds. Then tap **Update Loso Pinball** on the Pi, so Godot imports the new files, and run the game.
+From then on, anything you drop into `assets/` on the PC shows up on the Pi within seconds. Then start (or restart) the game with the **Loso Pinball** icon: it imports new files as it starts.
 
 ### scp (no install, by hand)
 
@@ -104,4 +106,4 @@ Windows includes an SSH client, so from PowerShell you can copy folders by hand:
 scp -r D:\Dev\Godot\loso-pinball-engine\assets\music yourusername@yourpi.local:~/loso-pinball-engine/assets/
 ```
 
-Then tap **Update Loso Pinball** on the Pi.
+Then start (or restart) the game with the **Loso Pinball** icon: it imports new files as it starts.

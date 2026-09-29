@@ -63,7 +63,7 @@ res://
 │                             #   hardware_page.gd, av_page.gd, coil_wizard.gd, input_editor.gd, ui_kit.gd (UiKit helpers),
 │                             #   display_settings.gd (DisplaySettings: UI scale + fullscreen)
 ├── test/                     # headless tests (test_config_link.gd, test_setup_ui.gd)
-├── tools/pi/                 # Pi helper scripts: run.sh, update.sh (git pull + --import), install-desktop-icons.sh
+├── tools/pi/                 # Pi helper scripts: run.sh (import, then start; closes an old copy), update.sh (git pull + --import), install-desktop-icons.sh
 ├── game/game.gd              # Autoload "Game": start / 3 balls / score / abort, scoring by switch kind
 ├── media/media.gd            # Autoload "Media": sound effects, music (crossfade, push/pop), cutscene video, bus volumes
 ├── assets/                   # sfx/, music/, video/ — NOT in git except README + test/ folders (synced PC → Pi)

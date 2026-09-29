@@ -36,7 +36,7 @@ Start in [`Docs/README.md`](Docs/README.md) for the full set. Highlights:
 - [Serial protocol](Docs/serial-protocol.md) — the wire protocol, with an example session.
 - [Service menu](Docs/service-menu.md) — the Monitor, Hardware and Audio & Video tabs, control by control.
 - [Audio, music and video](Docs/audio-video.md) — sounds, the music manager, cutscenes, and syncing media (not in git) to the Pi.
-- [Deploying to a Raspberry Pi](Docs/raspberry-pi.md) — from imaging the SD card to a working bench test, up to a full kiosk build.
+- [Deploying to a Raspberry Pi](Docs/raspberry-pi.md) — from imaging the SD card to a working bench test (desktop icons, sound setup, troubleshooting), up to a full kiosk build.
 
 ## Repo layout
 
