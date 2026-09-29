@@ -58,12 +58,12 @@ res://
 ├── board_link.gd             # class BoardLink: one serial link speaking PINIO 0.2 (no GdSerial inside)
 ├── boards/board_types.gd     # class BoardTypes: what each board type's pins can do (mirror of board_<type>.h)
 ├── config/                   # Autoload "MachineConfig", IoDefs records, machine_config.default.json,
-│                             #   and the F1 service menu: service_menu.tscn (Setup + Diagnostics tabs),
+│                             #   and the service menu (P key): service_menu.tscn (Setup + Diagnostics tabs),
 │                             #   setup_page.gd, coil_wizard.gd, input_editor.gd, ui_kit.gd (UiKit helpers)
 ├── test/                     # headless tests (test_config_link.gd)
 ├── main.tscn / main.gd       # Base scene (the main scene): always loaded, hosts modes + service page
 ├── modes/                    # Mode scenes swapped into Main's ModeHost (attract.tscn placeholder so far)
-├── control.tscn              # Diagnostics panel (root Control + test_panel.gd), the Diagnostics tab of the F1 menu
+├── control.tscn              # Diagnostics panel (root Control + test_panel.gd), the Diagnostics tab of the service menu
 ├── test_panel.gd
 └── Firmware/
     └── pinio/                      # PINIO 0.2 generic firmware: pinio.ino + board_<type>.h (Arduino IDE + Teensyduino)
@@ -71,7 +71,7 @@ res://
 
 The original files live flat at the project root — that's how the user placed them, so don't move them without asking. New work goes in subfolders (`modes/`, and per the build-out plan `boards/` and `config/`).
 
-**Scene structure**: `main.tscn` is always loaded (like Unreal's persistent level). It has a `ModeHost` node holding exactly one mode scene, swapped with `Main.show_mode(scene)`, and a `ServiceLayer` CanvasLayer on top that loads the service page on open and frees it on close (`open_service()` / `close_service()` / `toggle_service()`, F1 on a keyboard). Don't use `get_tree().change_scene_to_*()` — that would unload Main.
+**Scene structure**: `main.tscn` is always loaded (like Unreal's persistent level). It has a `ModeHost` node holding exactly one mode scene, swapped with `Main.show_mode(scene)`, and a `ServiceLayer` CanvasLayer on top that loads the service page on open and frees it on close (`open_service()` / `close_service()` / `toggle_service()`, the P key on a keyboard: `Main.SERVICE_KEY`; not F1, the Pi on-screen keyboard has no function keys). Don't use `get_tree().change_scene_to_*()` — that would unload Main.
 
 If the actual files are somewhere else, update this section. Don't move files the user placed without asking.
 
@@ -198,11 +198,11 @@ Autoload **`MachineConfig`** (`config/machine_config.gd`), listed **above** Pinb
 
 1. ✅ Serial link, test sketch, PinballIO autoload, and test panel.
 2. Configurable I/O build-out (in progress):
-   - ✅ Base scene (`main.tscn`, mode host, F1 service layer).
+   - ✅ Base scene (`main.tscn`, mode host, service layer on the P key).
    - ✅ PINIO 0.2 generic firmware with the trigger/EOS/hold coil rule, which covers the real flipper state machine. Compiles; not yet bench-tested on wired pins.
    - ✅ MachineConfig + BoardTypes + BoardLink, and a name-based PinballIO.
    - ✅ Burn layout to board (EEPROM, fingerprints in HELLO).
-   - ✅ Setup tab (F1): coil wizard (kind → name/pin → trigger/EOS, can create switches → power → review + live test → save), switch editor, delete, Burn to board. Edits are drafts (MachineConfig.snapshot/restore) until Save.
+   - ✅ Setup tab (P key): coil wizard (kind → name/pin → trigger/EOS, can create switches → power → review + live test → save), switch editor, delete, Burn to board. Edits are drafts (MachineConfig.snapshot/restore) until Save.
    - Lamps: all lighting will be WS2812B LED chains (FastLED-style) on a few outputs. Not designed yet; the current CFG LAMP/LED on-off stays but has no setup UI.
    - Several boards at once (auto-scan ports, match by uid, machine fault if one drops).
    - Arduino Uno board support (`board_uno.h`).

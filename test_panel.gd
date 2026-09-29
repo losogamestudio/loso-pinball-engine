@@ -1,5 +1,5 @@
 extends Control
-## Diagnostics panel: the F1 service page for now. Attach to the root Control
+## Diagnostics panel: the Diagnostics tab of the service menu (P key). Attach to the root Control
 ## of a scene. Builds its own UI in code, so there's no .tscn wiring to get wrong.
 ##
 ## Everything machine-specific (which switches, coils and lamps exist) comes

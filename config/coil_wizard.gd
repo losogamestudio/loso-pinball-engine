@@ -129,7 +129,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	# Closed without Save/Cancel (e.g. F1 closed the service menu): discard the draft.
+	# Closed without Save/Cancel (e.g. P closed the service menu): discard the draft.
 	if not _finished:
 		_end_test_rule()
 		_unapply()

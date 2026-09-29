@@ -29,6 +29,6 @@ theme_override_font_sizes/font_size = 48
 text = "LOSO PINBALL
 
 attract mode placeholder
-press F1 for service"
+press P for service"
 horizontal_alignment = 1
 vertical_alignment = 1

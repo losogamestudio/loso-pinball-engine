@@ -10,7 +10,11 @@ extends Node
 ##
 ## Mode scenes are swapped with show_mode(). The service page is loaded when
 ## opened and freed when closed, so it costs nothing while the game runs.
-## Press F1 to toggle it (on the cabinet this will become a coin-door button).
+## Press P to toggle it (on the cabinet this will become a coin-door button).
+
+## Keyboard key that opens/closes the service menu. P rather than F1, because
+## the Raspberry Pi's on-screen keyboard has no function keys.
+const SERVICE_KEY := KEY_P
 
 signal mode_changed(mode: Node)          ## a new mode scene is now running
 signal service_toggled(is_open: bool)    ## service page opened or closed
@@ -35,9 +39,9 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	# _unhandled_input only sees events nothing else consumed, so a text field
-	# on the service page can still use F1 without closing the page.
+	# on the service page (e.g. typing a name with a "p" in it) never closes the page.
 	if event is InputEventKey and event.pressed and not event.echo:
-		if (event as InputEventKey).keycode == KEY_F1:
+		if (event as InputEventKey).keycode == SERVICE_KEY:
 			toggle_service()
 			get_viewport().set_input_as_handled()
 

@@ -50,7 +50,7 @@ res://
 ├── boards/                    # board type definitions (which pins can do what)
 ├── config/                    # Autoload "MachineConfig" + the default machine layout (JSON)
 ├── test/                      # headless tests, no hardware needed
-├── main.tscn / main.gd        # base scene: always loaded, hosts mode scenes + the F1 service page
+├── main.tscn / main.gd        # base scene: always loaded, hosts mode scenes + the service menu (P key)
 ├── modes/                     # mode scenes (attract placeholder for now)
 ├── control.tscn               # diagnostics/test panel scene (the service page for now)
 ├── test_panel.gd
@@ -63,7 +63,7 @@ res://
 1. Install **Godot 4.4+**, standard build (not .NET) — this project is GDScript only.
 2. Open the project folder in Godot. The GdSerial plugin is already vendored under `addons/gdserial` and enabled in `project.godot`, so there's nothing extra to install there.
 3. Flash `Firmware/pinio/pinio.ino` to a Teensy 4.1 with Arduino IDE + Teensyduino (USB Type: "Serial"). The bench wiring for the default config is in [`Docs/getting-started.md`](Docs/getting-started.md).
-4. Run the project. It opens on an attract-mode placeholder; press **F1** to open the diagnostics panel. Pick your Teensy's serial port from the dropdown and hit **Connect**.
+4. Run the project. It opens on an attract-mode placeholder; press **P** to open the diagnostics panel. Pick your Teensy's serial port from the dropdown and hit **Connect**.
 5. Once linked, check "Auto-connect at startup" if you want it to remember that port and reconnect automatically next time.
 
 Full walkthrough (hardware shopping list, headless testing, what to expect on screen): [`Docs/getting-started.md`](Docs/getting-started.md).
@@ -74,9 +74,9 @@ The real cabinet target is a **Raspberry Pi 4 or later** — desktops are for de
 
 ## What's working right now
 
-The base scene (`main.tscn`) starts on an attract-mode placeholder, and **F1** opens a **diagnostics panel** for the serial link and I/O. The panel is meant to keep growing into the full diagnostics page for the real machine:
+The base scene (`main.tscn`) starts on an attract-mode placeholder, and **P** opens a **diagnostics panel** for the serial link and I/O. The panel is meant to keep growing into the full diagnostics page for the real machine:
 
-- **F1 → Setup**: add and edit coils with a step-by-step wizard (flipper / sling / kicker / diverter presets, output pin, trigger and end-of-stroke switches, power, then live test-firing before saving), edit switches, and burn the layout to the board.
+- **P → Setup**: add and edit coils with a step-by-step wizard (flipper / sling / kicker / diverter presets, output pin, trigger and end-of-stroke switches, power, then live test-firing before saving), edit switches, and burn the layout to the board.
 - The whole I/O layout comes from one machine config file. On link, Godot checks it and sends it to the board, which then runs flippers (trigger → full power → EOS → PWM hold), slings and pops entirely by itself.
 - Port picker with auto-connect: remembers the last port a board actually answered on, and can reconnect to it automatically on startup.
 - Live link/board status, plus a heartbeat lamp that pulses on every `HB` from the board — so a frozen board is visibly different from a merely-quiet one.
