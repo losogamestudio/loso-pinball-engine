@@ -16,6 +16,7 @@ The project is also meant to become a **beginner-friendly reference build** that
 
 The game brain's end home is a **Raspberry Pi 4 or later**, not a desktop PC. The desktop is for development; the Pi is the deployment target for the actual cabinet. Concretely:
 
+- **Screen scaling**: everything is laid out for **1280×720** and stretched to the real screen (`display/window/stretch/mode = canvas_items`, aspect `expand`). A per-machine UI scale (multiplier via `Window.content_scale_factor`) and fullscreen live in `DisplaySettings` (`config/display_settings.gd`, saved in `user://display.cfg`), applied in `main.gd` `_ready` and set from the Setup page. The current bench Pi screen is **800×480**: 150% UI scale is readable there. Don't hard-code layouts wider than ~800 px at 150% (rows must wrap/scroll).
 - `project.godot` already sets the renderer to **GL Compatibility** (OpenGL ES 3 under the hood). That's deliberate and Pi-appropriate — don't suggest switching to the Forward+ (Vulkan) renderer for this project, since the Pi's GPU doesn't run it well.
 - **Video cutscenes are the one open risk.** Godot 4's built-in `VideoStreamPlayer` only decodes Ogg Theora, entirely in software — there is no hardware-accelerated video path in core Godot on Linux/Pi. That's fine on a desktop but can bog down a Pi 4's CPU at higher resolutions or framerates.
   - Don't assume heavy video cutscenes will just work on the Pi. Before investing real production time in cutscene content, encode a representative test clip and play it back on real Pi 4 hardware to see actual dropped-frame/CPU behavior — don't extrapolate from how it runs on a desktop.
@@ -59,7 +60,8 @@ res://
 ├── boards/board_types.gd     # class BoardTypes: what each board type's pins can do (mirror of board_<type>.h)
 ├── config/                   # Autoload "MachineConfig", IoDefs records, machine_config.default.json,
 │                             #   and the service menu (P key): service_menu.tscn (Setup + Diagnostics tabs),
-│                             #   setup_page.gd, coil_wizard.gd, input_editor.gd, ui_kit.gd (UiKit helpers)
+│                             #   setup_page.gd, coil_wizard.gd, input_editor.gd, ui_kit.gd (UiKit helpers),
+│                             #   display_settings.gd (DisplaySettings: UI scale + fullscreen)
 ├── test/                     # headless tests (test_config_link.gd, test_setup_ui.gd)
 ├── tools/pi/                 # Pi helper scripts: run.sh, update.sh (git pull + --import), install-desktop-icons.sh
 ├── main.tscn / main.gd       # Base scene (the main scene): always loaded, hosts modes + service page

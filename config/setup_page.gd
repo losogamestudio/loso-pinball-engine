@@ -54,10 +54,40 @@ func _rebuild() -> void:
 		return
 	UiKit.free_children(_list)
 	_switch_lamps.clear()
+	_build_screen()
 	_build_boards()
 	_build_coils()
 	_build_switches()
 	_build_footer()
+
+
+## UI scale and fullscreen for this machine's display (saved in user://display.cfg).
+func _build_screen() -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	var screen := DisplaySettings.screen_size()
+	var label := Label.new()
+	label.text = "Screen %d×%d" % [screen.x, screen.y]
+	label.custom_minimum_size.x = 160
+	row.add_child(label)
+
+	var scale_pick := OptionButton.new()
+	var current := DisplaySettings.get_ui_scale()
+	for ui_scale in DisplaySettings.SCALES:
+		scale_pick.add_item("UI scale %d%%" % roundi(ui_scale * 100))
+		if is_equal_approx(ui_scale, current):
+			scale_pick.select(scale_pick.item_count - 1)
+	scale_pick.item_selected.connect(func(i: int) -> void: DisplaySettings.set_ui_scale(DisplaySettings.SCALES[i]))
+	row.add_child(scale_pick)
+
+	var full := CheckBox.new()
+	full.text = "Fullscreen"
+	full.button_pressed = DisplaySettings.get_fullscreen()
+	full.toggled.connect(DisplaySettings.set_fullscreen)
+	row.add_child(full)
+
+	row.add_child(UiKit.note("Small screens (e.g. 800×480): try 150%."))
+	_list.add_child(row)
 
 
 func _build_boards() -> void:

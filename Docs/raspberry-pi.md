@@ -111,6 +111,10 @@ Don't skip the import. Scripts that declare a `class_name` (like `IoDefs` or `Bo
 
 If `git pull` complains about local changes you don't care about, discard them first with `git checkout -- .`.
 
+### Small screens
+
+Everything is laid out for 1280×720 and scaled to fit the screen, so it works at any resolution. On a small display, such as the 800×480 bench screen, press **P**, then on the **Setup** tab set **UI scale** to 150% and tick **Fullscreen**. Both are remembered on the Pi. If the screen is smaller than 1280×720, the window also starts maximized automatically.
+
 ### Desktop icons (skip the typing)
 
 `tools/pi/` has scripts that do the above for you. Run this once on the Pi, in a terminal or over SSH:

@@ -32,6 +32,7 @@ var _current_mode: Node
 
 
 func _ready() -> void:
+	DisplaySettings.apply_saved()   # UI scale + fullscreen for this machine's screen
 	_service_layer.visible = false
 	if start_mode:
 		show_mode(start_mode)

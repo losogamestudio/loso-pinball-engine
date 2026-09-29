@@ -20,6 +20,13 @@ config/icon="res://icon.svg"
 MachineConfig="*res://config/machine_config.gd"
 PinballIO="*res://pinball_io.gd"
 
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/gdserial/plugin.cfg")
