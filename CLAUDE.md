@@ -60,7 +60,8 @@ res://
 ├── config/                   # Autoload "MachineConfig", IoDefs records, machine_config.default.json,
 │                             #   and the service menu (P key): service_menu.tscn (Setup + Diagnostics tabs),
 │                             #   setup_page.gd, coil_wizard.gd, input_editor.gd, ui_kit.gd (UiKit helpers)
-├── test/                     # headless tests (test_config_link.gd)
+├── test/                     # headless tests (test_config_link.gd, test_setup_ui.gd)
+├── tools/pi/                 # Pi helper scripts: run.sh, update.sh (git pull + --import), install-desktop-icons.sh
 ├── main.tscn / main.gd       # Base scene (the main scene): always loaded, hosts modes + service page
 ├── modes/                    # Mode scenes swapped into Main's ModeHost (attract.tscn placeholder so far)
 ├── control.tscn              # Diagnostics panel (root Control + test_panel.gd), the Diagnostics tab of the service menu

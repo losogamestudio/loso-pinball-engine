@@ -111,6 +111,23 @@ Don't skip the import. Scripts that declare a `class_name` (like `IoDefs` or `Bo
 
 If `git pull` complains about local changes you don't care about, discard them first with `git checkout -- .`.
 
+### Desktop icons (skip the typing)
+
+`tools/pi/` has scripts that do the above for you. Run this once on the Pi, in a terminal or over SSH:
+
+```sh
+bash ~/loso-pinball-engine/tools/pi/install-desktop-icons.sh
+```
+
+It puts two icons on the desktop, and in the app menu under Games:
+
+- **Loso Pinball** runs `tools/pi/run.sh`: starts the game with the Wayland/OpenGL ES flags.
+- **Update Loso Pinball** runs `tools/pi/update.sh`: `git pull` plus the import, in a terminal window so you can read the result. Press Enter to close it.
+
+Both find the newest Godot in `~/godot` by themselves, so they keep working after you upgrade Godot.
+
+The first time you double-click an icon, the desktop may ask what to do: choose **Execute**. To stop it asking, open the File Manager and go to **Edit → Preferences → General → "Don't ask options on launch executable file"**.
+
 ### What the Godot log means
 
 A healthy run on a Pi 4 prints something like this. None of it is an error:
