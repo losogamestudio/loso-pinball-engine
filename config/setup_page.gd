@@ -53,11 +53,11 @@ func _rebuild() -> void:
 		return
 	UiKit.free_children(_list)
 	_switch_lamps.clear()
-	# Each is a gray section card; the things you change most come first.
+	# Each is a gray section card. Screen first, so fullscreen is one tap away.
+	_build_screen()
 	_build_boards()
 	_build_coils()
 	_build_switches()
-	_build_screen()
 	_build_footer()
 
 

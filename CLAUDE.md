@@ -78,12 +78,12 @@ The original files live flat at the project root — that's how the user placed 
 
 **Scene structure**: `main.tscn` is always loaded (like Unreal's persistent level). It has a `ModeHost` node holding exactly one mode scene, swapped with `Main.show_mode(scene)`, and a `ServiceLayer` CanvasLayer on top that loads the service page on open and frees it on close (`open_service()` / `close_service()` / `toggle_service()`). `Main` swaps attract ⇄ game_play on `Game.game_started` / `Game.game_ended`; modes call `Game.start_game()` / `abort_game()` / `end_ball()` and never switch scenes themselves. The service page opens from the attract screen's touch **Service** button (the mode emits `service_requested`; Main connects it for any mode that has that signal) or the P key (`Main.SERVICE_KEY`; not F1, the Pi on-screen keyboard has no function keys). It closes from the menu's **Exit** button (`exit_requested`) or P.
 
-**The UI is touch-first** (Pi touchscreen, no keyboard): every action needs an on-screen button, big enough for a finger (~56 px tall for primary buttons like Service/Exit). Keyboard shortcuts are extras only.
+**The UI is touch-first** (Pi touchscreen, no keyboard): every action needs an on-screen button, big enough for a finger (~56 px tall for primary buttons like Service/Exit). Keyboard shortcuts are extras only. Anything that would otherwise need a keyboard (e.g. leaving fullscreen, which is the default: `DisplaySettings.DEFAULT_FULLSCREEN`) needs a button, like the Fullscreen box at the top of the Setup tab and "Quit to desktop". Don't use `get_tree().change_scene_to_*()` — that would unload Main.
 
 **Service screen look** (`UiKit`): the shared theme (`UiKit.style_theme`, applied inside `DisplaySettings.text_theme()`) gives buttons, dropdowns, fields and tabs gray backgrounds.
 - **Layout**: each group is a `UiKit.section()` card with a cyan heading. Each item is a `UiKit.row_card()` holding a `UiKit.name_block(name, details)`: the name on top, small dim details underneath (`DETAIL_SIZE`), buttons on the right.
 - **Button text color says the role**: `UiKit.PRIMARY` cyan (Add, Save, Next, Burn), `UiKit.TEST` purple (fires hardware; the same purple as the game screen's test buttons), `UiKit.DANGER` salmon (Delete, Reset, Quit).
-- **Text**: explanations use `UiKit.note()`, which is smaller. Keep row details short; long explanations go in the editors, not the lists. Anything that would otherwise need a keyboard (e.g. leaving fullscreen) needs a button, like "Quit to desktop" on the Setup tab. Don't use `get_tree().change_scene_to_*()` — that would unload Main.
+- **Text**: explanations use `UiKit.note()`, which is smaller. Keep row details short; long explanations go in the editors, not the lists.
 
 If the actual files are somewhere else, update this section. Don't move files the user placed without asking.
 

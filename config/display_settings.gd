@@ -21,6 +21,7 @@ const SCALES: Array[float] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 const TEXT_SCALES: Array[float] = [1.0, 1.3, 1.6, 2.0, 2.4]
 const DEFAULT_TEXT_SCALE := 2.0
 const BASE_FONT_SIZE := 16   ## Godot's default font size, before text scaling
+const DEFAULT_FULLSCREEN := true   ## until the Setup tab's Fullscreen box is unticked
 
 static var _text_scale_cache := 0.0   ## so font_size() doesn't read the file for every label
 static var _text_theme: Theme          ## shared by every screen; see text_theme()
@@ -41,8 +42,9 @@ static func get_ui_scale() -> float:
 	return _load().get_value("display", "ui_scale", 1.0)
 
 
+## Fullscreen unless this machine turned it off (the cabinet screen is the whole display).
 static func get_fullscreen() -> bool:
-	return _load().get_value("display", "fullscreen", false)
+	return _load().get_value("display", "fullscreen", DEFAULT_FULLSCREEN)
 
 
 ## Change the UI scale (1.0 = 100%), apply it now, and remember it.
