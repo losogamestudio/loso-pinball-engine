@@ -1,5 +1,5 @@
 extends VBoxContainer
-## CoilWizard — step-by-step setup for one coil, shown inside the Setup tab.
+## CoilWizard — step-by-step setup for one coil, shown inside the Hardware tab.
 ##
 ## Pages: kind (new coils only) → name + output pin → trigger + EOS switches
 ## → power → review + live test. The wizard edits a draft; on the review page
@@ -481,7 +481,7 @@ func _build_review_page() -> void:
 		tests.add_child(arm)
 
 	_body.add_child(UiKit.note(
-			"Save writes this into the machine config. Board '%s' then runs it until power-off; press \"Burn to board\" on the Setup page so it keeps it." % board.id))
+			"Save writes this into the machine config. Board '%s' then runs it until power-off; press \"Burn\" on the Hardware tab so it keeps it." % board.id))
 
 
 func _add_input_summary(label_text: String, input_name: StringName, role: String) -> void:
@@ -512,7 +512,7 @@ func _update_status() -> void:
 		_status_label.text = "Board '%s' is running this draft now. Test it below (nothing is saved yet)." % _draft.board
 		_status_label.add_theme_color_override("font_color", UiKit.OK_COLOR)
 	else:
-		_status_label.text = "Board '%s' isn't connected, so this can't be tested right now. You can still save it. (Connect on the Diagnostics tab.)" % _draft.board
+		_status_label.text = "Board '%s' isn't connected, so this can't be tested right now. You can still save it. (Connect at the top of the Hardware tab.)" % _draft.board
 		_status_label.add_theme_color_override("font_color", UiKit.WARN_COLOR)
 
 

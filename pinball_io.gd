@@ -25,6 +25,9 @@ signal board_notice(port: String, message: String)    ## worth knowing, not an e
 signal board_burned(board_id: StringName)       ## board stored its layout in EEPROM
 signal switch_changed(switch_name: StringName, active: bool)
 signal coil_fired(coil_name: StringName)        ## a coil rule fired on its board (slings, pops...)
+## Godot sent a coil command: a PULSE (on = true, it ends by itself) or HOLD ON/OFF.
+## For displays like the Monitor tab; the board doesn't report coil outputs.
+signal coil_commanded(coil_name: StringName, on: bool, is_pulse: bool)
 signal watchdog_changed(board_id: StringName, tripped: bool)
 signal latency_measured(port: String, ms: float)
 signal heartbeat(port: String, millis: int)     ## board's HB, once per second while linked
@@ -203,6 +206,7 @@ func pulse_coil(coil_name: StringName, ms := -1) -> void:
 	var r := _route(_coil_routes, coil_name, "coil")
 	if r:
 		r.link.send("PULSE %d" % r.index if ms < 0 else "PULSE %d %d" % [r.index, ms])
+		coil_commanded.emit(coil_name, true, true)
 
 
 ## Hold a coil on (full power, then its hold %) until told off. For diverters,
@@ -211,6 +215,7 @@ func hold_coil(coil_name: StringName, on: bool) -> void:
 	var r := _route(_coil_routes, coil_name, "coil")
 	if r:
 		r.link.send("HOLD %d %s" % [r.index, "ON" if on else "OFF"])
+		coil_commanded.emit(coil_name, on, false)
 
 
 ## Arm or disarm a coil's trigger rule (flippers, slings, pops). Remembered,

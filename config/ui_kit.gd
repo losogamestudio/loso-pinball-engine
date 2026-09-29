@@ -36,7 +36,8 @@ const DETAIL_SIZE := 11    ## the second line of a coil/switch row
 static func button(text: String, on_press: Callable, role := PLAIN) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.pressed.connect(on_press)
+	if on_press.is_valid():   # Callable() = connect it yourself (e.g. when the handler needs the button)
+		b.pressed.connect(on_press)
 	var color: Variant = {PRIMARY: ACCENT_COLOR, TEST: TEST_COLOR, DANGER: DANGER_COLOR}.get(role)
 	if color != null:
 		for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
@@ -125,6 +126,10 @@ static func style_theme(theme: Theme) -> void:
 	theme.set_stylebox("normal", "LineEdit", field)
 	theme.set_stylebox("normal", "TextEdit", field)
 	theme.set_stylebox("normal", "RichTextLabel", field)
+	# Sliders (volumes): a thick track, filled in cyan up to the handle.
+	theme.set_stylebox("slider", "HSlider", _box(FIELD_BG, 6, 0, 8))
+	theme.set_stylebox("grabber_area", "HSlider", _box(BUTTON_PRESSED_BG, 6, 0, 8))
+	theme.set_stylebox("grabber_area_highlight", "HSlider", _box(BUTTON_PRESSED_BG.lightened(0.2), 6, 0, 8))
 	# Tabs (Setup / Diagnostics): gray tabs, the open one lighter with cyan text.
 	theme.set_stylebox("tab_unselected", "TabContainer", _box(SECTION_BG, 6, 18, 6))
 	theme.set_stylebox("tab_hovered", "TabContainer", _box(BUTTON_HOVER_BG, 6, 18, 6))

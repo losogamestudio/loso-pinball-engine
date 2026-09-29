@@ -2,9 +2,16 @@
 
 Which pin on which board is which switch, coil, or lamp is **data, not code**. It lives in one config file that Godot reads at startup and sends to each board when it links. Game code never sees a pin number. It uses names like `flipper_left` and `sling_left_switch`.
 
-## The Setup tab (P key)
+## The Hardware tab (P key)
 
-Touch **Service** (bottom-right of the opening screen) or press **P**, and open the **Setup** tab. **Exit** (top-right) closes the menu; **Quit to desktop** is at the bottom of the Setup tab. The top row is for this machine's screen: a **UI scale** (the game is laid out for 1280×720 and shrunk or stretched to fit; leave it at 100% on a small screen), a **Text size** that makes only the letters bigger and keeps the layout (200% by default, which suits an 800×480 screen), and **Fullscreen** (on by default; untick it to get a window back). They apply immediately and are remembered on this machine (`user://display.cfg`). Below that it lists every coil and switch, with **Edit** and **Delete** buttons and live lamps for the switches. The board row shows whether each board is connected and whether its layout is burned, with a **Burn to board** button when it isn't.
+Touch **Service** (bottom-right of the opening screen) or press **P**, and open the **Hardware** tab. **Exit** (top-right) closes the menu, and **Quit** next to it goes back to the desktop.
+
+The tab lists, from the top:
+- **Connection**
+- the **Boards**, each showing whether it's connected and whether its layout is burned, with a **Burn** button when it isn't
+- every **coil** and **switch**, with **Edit** and **Delete** buttons and live lamps for the switches
+
+Screen size, volume and media settings are on the **Audio & Video** tab. See [Service menu](service-menu.md) for every tab.
 
 **+ Add coil** opens a step-by-step wizard:
 
@@ -18,16 +25,16 @@ Touch **Service** (bottom-right of the opening screen) or press **P**, and open 
 
 After saving, press **Burn to board** so the Teensy keeps the layout at power-off.
 
-Lamps aren't in the Setup tab: lighting will be WS2812B LED chains, set up in a later version.
+Lamps only have an OFF/ON/BLINK button on the Hardware tab for now: lighting will be WS2812B LED chains, set up in a later version.
 
-The rest of this page describes the file the Setup tab edits. You can still edit it by hand.
+The rest of this page describes the file the Hardware tab edits. You can still edit it by hand.
 
 ## Where it lives
 
 | File | What it is |
 |---|---|
 | `res://config/machine_config.default.json` | The layout that ships with the project (in git). Used when nothing is saved. |
-| `user://machine_config.json` | This machine's saved layout. When it exists, it wins. The Setup tab writes it; "Reset to default layout" deletes it. |
+| `user://machine_config.json` | This machine's saved layout. When it exists, it wins. The Hardware tab writes it; "Reset to default layout" deletes it. |
 
 `user://` is Godot's per-user data folder, outside the project, so it's never committed. On Windows it's `%APPDATA%\Godot\app_userdata\Loso Pinball Engine\`; on Linux and the Pi it's `~/.local/share/godot/app_userdata/Loso Pinball Engine/`.
 
@@ -44,7 +51,7 @@ The diagnostics panel (P key) shows which file was loaded, and lists any problem
   "inputs": [
     { "name": "flipper_left_button", "board": "main", "pin": 33, "nc": false, "debounce_ms": 5, "kind": "switch", "points": 0 },
     { "name": "flipper_left_eos",    "board": "main", "pin": 34, "nc": false, "debounce_ms": 2, "kind": "switch", "points": 0 },
-    { "name": "sling_left_switch",   "board": "main", "pin": 35, "nc": false, "debounce_ms": 5, "kind": "target", "points": 10 }
+    { "name": "sling_left_switch",   "board": "main", "pin": 35, "nc": false, "debounce_ms": 5, "kind": "target", "points": 10, "sound": "test_beep" }
   ],
   "coils": [
     { "name": "flipper_left", "board": "main", "pin": 2,  "full_ms": 60, "hold_pct": 50,
@@ -79,6 +86,7 @@ The diagnostics panel (P key) shows which file was loaded, and lists any problem
 | `debounce_ms` | 0–100. How long the switch must be stable before it counts. |
 | `kind` | What the switch means to the game (see below). Missing = `switch`. |
 | `points` | For `target`/`spinner`: points per close, 0–1,000,000. |
+| `sound` | Optional sound name (a file in `assets/sfx/`) played when it closes during a game. Modes can change it; see [Audio](audio-video.md). |
 
 **Switch kinds** are used only by Godot's `Game` autoload. The board never sees them, so changing a kind or its points doesn't change the layout fingerprint or need a burn.
 
@@ -109,7 +117,7 @@ Just a `name`, `board` and output `pin`.
 
 ## Getting it onto the board
 
-When a board connects, Godot compares the board's layout fingerprint with its own. If they differ, it sends this file's layout to the board, which runs it straight away but only in RAM. **Burn to board** (P → Setup, or "Burn layout to board" on the Diagnostics tab) stores it in the board's EEPROM, so the board boots configured. This file stays the master copy: after changing it, burn again. See [Serial protocol](serial-protocol.md#burning-the-layout-and-fingerprints) for the details.
+When a board connects, Godot compares the board's layout fingerprint with its own. If they differ, it sends this file's layout to the board, which runs it straight away but only in RAM. **Burn** (P → Hardware → Boards) stores it in the board's EEPROM, so the board boots configured. This file stays the master copy: after changing it, burn again. See [Serial protocol](serial-protocol.md#burning-the-layout-and-fingerprints) for the details.
 
 ## Rules the config must follow
 

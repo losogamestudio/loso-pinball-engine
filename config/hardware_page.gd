@@ -1,11 +1,12 @@
 extends MarginContainer
-## SetupPage — the "Setup" tab of the service menu: the machine's coils and
-## switches, with wizards to add/edit them, and "Burn to board".
+## HardwarePage — the "Hardware" tab of the service menu: connecting boards,
+## burning layouts, and the machine's coils, switches and lamps, with wizards
+## to add/edit them.
 ##
 ## Everything here edits MachineConfig (the master copy on the Pi/PC) and
 ## saves it to user://machine_config.json. Linked boards pick up changes
-## right away; "Burn to board" makes a board keep its layout at power-off.
-## Lamps will become LED chains later, so they aren't edited here yet.
+## right away; "Burn" makes a board keep its layout at power-off.
+## Lamps will become WS2812B LED chains later; for now they just cycle.
 
 const CoilWizardScript := preload("res://config/coil_wizard.gd")
 const InputEditorScript := preload("res://config/input_editor.gd")
@@ -16,6 +17,7 @@ var _editor_host: VBoxContainer
 var _confirm: ConfirmationDialog
 var _pending_confirm: Callable
 var _switch_lamps := {}        ## switch name -> ColorRect in the list
+var _port_menu: OptionButton
 
 
 func _ready() -> void:
@@ -38,12 +40,30 @@ func _ready() -> void:
 	add_child(_confirm)
 
 	MachineConfig.changed.connect(_rebuild)
+	PinballIO.port_linked.connect(func(_p: String, _f: String, _t: String, _u: String) -> void: _rebuild())
+	PinballIO.port_unlinked.connect(func(_port: String) -> void: _rebuild())
 	PinballIO.board_ready.connect(_on_board_event)
 	PinballIO.board_lost.connect(_on_board_event)
 	PinballIO.board_burned.connect(_on_board_event)
-	PinballIO.port_unlinked.connect(func(_port: String) -> void: _rebuild())
+	PinballIO.board_problem.connect(func(_p: String, _m: String) -> void: _rebuild())
 	PinballIO.switch_changed.connect(_on_switch_changed)
 	_rebuild()
+
+
+func _input(event: InputEvent) -> void:
+	# Keyboard stand-in for the first two coils' buttons: there's no keyboard
+	# on the real cabinet, so this only exists for bench-testing on a desktop.
+	# Only while this tab shows its list (_input runs even for hidden nodes).
+	if not is_visible_in_tree() or _editor_host.visible:
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		var coil_index := -1
+		match (event as InputEventKey).keycode:
+			KEY_LEFT: coil_index = 0
+			KEY_RIGHT: coil_index = 1
+		if coil_index != -1 and coil_index < MachineConfig.coils.size():
+			PinballIO.pulse_coil(MachineConfig.coils[coil_index].name)
+			accept_event()
 
 
 # ---------------------------------------------------------------- the list
@@ -53,53 +73,62 @@ func _rebuild() -> void:
 		return
 	UiKit.free_children(_list)
 	_switch_lamps.clear()
-	# Each is a gray section card. Screen first, so fullscreen is one tap away.
-	_build_screen()
+	# Each is a gray section card, in the order you set a machine up.
+	_build_connection()
 	_build_boards()
 	_build_coils()
 	_build_switches()
+	_build_lamps()
 	_build_footer()
 
 
-## UI scale and fullscreen for this machine's display (saved in user://display.cfg).
-func _build_screen() -> void:
-	var screen := DisplaySettings.screen_size()
-	var body := UiKit.section(_list, "Screen")
-	var row := HFlowContainer.new()   # wraps onto a second line on a narrow screen
-	row.add_theme_constant_override("h_separation", 12)
-	row.add_theme_constant_override("v_separation", 8)
+## Port picker and link status. PinballIO remembers the port for auto-connect.
+func _build_connection() -> void:
+	var body := UiKit.section(_list, "Connection")
+	var row := _flow()
 	body.add_child(row)
+	_port_menu = OptionButton.new()
+	_port_menu.custom_minimum_size.x = 220
+	row.add_child(_port_menu)
+	_refresh_ports()
+	row.add_child(UiKit.button("Refresh", _refresh_ports))
+	row.add_child(UiKit.button("Connect", _on_connect_pressed, UiKit.PRIMARY))
+	row.add_child(UiKit.button("Disconnect all", func() -> void:
+		PinballIO.close_port()
+		_rebuild()))
+	var auto := CheckButton.new()
+	auto.text = "Auto-connect at startup"
+	auto.button_pressed = PinballIO.auto_connect
+	auto.toggled.connect(func(on: bool) -> void: PinballIO.set_auto_connect(on))
+	row.add_child(auto)
 
-	var scale_pick := OptionButton.new()
-	var current := DisplaySettings.get_ui_scale()
-	for ui_scale in DisplaySettings.SCALES:
-		scale_pick.add_item("UI scale %d%%" % roundi(ui_scale * 100))
-		if is_equal_approx(ui_scale, current):
-			scale_pick.select(scale_pick.item_count - 1)
-	scale_pick.item_selected.connect(func(i: int) -> void: DisplaySettings.set_ui_scale(DisplaySettings.SCALES[i]))
-	row.add_child(scale_pick)
-
-	var text_pick := OptionButton.new()
-	var current_text := DisplaySettings.get_text_scale()
-	for text_scale in DisplaySettings.TEXT_SCALES:
-		text_pick.add_item("Text size %d%%" % roundi(text_scale * 100))
-		if is_equal_approx(text_scale, current_text):
-			text_pick.select(text_pick.item_count - 1)
-	text_pick.item_selected.connect(_on_text_size_picked)
-	row.add_child(text_pick)
-
-	var full := CheckBox.new()
-	full.text = "Fullscreen"
-	full.button_pressed = DisplaySettings.get_fullscreen()
-	full.toggled.connect(DisplaySettings.set_fullscreen)
-	row.add_child(full)
-
-	body.add_child(UiKit.detail("Screen %d×%d. UI scale sizes everything, Text size only the letters. 800×480: UI 100%%, Text 200%%." % [screen.x, screen.y]))
+	var status: Label
+	if PinballIO.is_ready():
+		status = UiKit.colored("Ready: every board is running its layout", UiKit.OK_COLOR)
+	elif PinballIO.is_any_port_open():
+		status = UiKit.colored("Port open on %s, waiting for the board… (details on the Monitor tab)" % ", ".join(PinballIO.get_open_ports()), UiKit.WARN_COLOR)
+	else:
+		status = UiKit.colored("Not connected", UiKit.BAD_COLOR)
+	body.add_child(status)
 
 
-func _on_text_size_picked(index: int) -> void:
-	DisplaySettings.set_text_scale(DisplaySettings.TEXT_SCALES[index])
-	_rebuild.call_deferred()   # headings set their own size, so build them again
+func _refresh_ports() -> void:
+	_port_menu.clear()
+	var ports: Array[String] = PinballIO.list_ports()
+	for p in ports:
+		_port_menu.add_item(p)
+	_port_menu.disabled = ports.is_empty()
+	if ports.is_empty():
+		_port_menu.add_item("(no ports)")
+	elif ports.has(PinballIO.last_port):
+		_port_menu.select(ports.find(PinballIO.last_port))
+
+
+func _on_connect_pressed() -> void:
+	if _port_menu.disabled:
+		return
+	PinballIO.open_port(_port_menu.get_item_text(_port_menu.selected))
+	_rebuild()
 
 
 func _build_boards() -> void:
@@ -109,7 +138,7 @@ func _build_boards() -> void:
 		var port := PinballIO.get_port_for_board(b.id)
 		var status: Label
 		if port.is_empty():
-			status = UiKit.colored("Not connected (Diagnostics tab)", UiKit.WARN_COLOR)
+			status = UiKit.colored("Not connected", UiKit.WARN_COLOR)
 		elif PinballIO.is_board_burned(b.id):
 			status = UiKit.colored("On %s · burned ✓" % port, UiKit.OK_COLOR)
 		else:
@@ -123,16 +152,34 @@ func _build_boards() -> void:
 
 
 func _build_coils() -> void:
-	var add: Array[Control] = [UiKit.button("+ Add coil", _open_coil_wizard.bind(&""), UiKit.PRIMARY)]
-	var body := UiKit.section(_list, "Coils", add)
+	var head: Array[Control] = [
+		UiKit.button("+ Add coil", _open_coil_wizard.bind(&""), UiKit.PRIMARY),
+		UiKit.button("Arm all", _set_all_rules.bind(true), UiKit.TEST),
+		UiKit.button("Disarm all", _set_all_rules.bind(false)),
+	]
+	var body := UiKit.section(_list, "Coils", head)
 	if MachineConfig.coils.is_empty():
 		body.add_child(UiKit.note("No coils yet. Add one to get started."))
 	for c in MachineConfig.coils:
 		var row := UiKit.row_card(body)
 		row.add_child(UiKit.name_block("%s · pin %d" % [c.name, c.pin], _describe_coil(c)))
 		row.add_child(UiKit.button("Fire", func() -> void: PinballIO.pulse_coil(c.name), UiKit.TEST))
+		if c.trigger != &"":
+			# Arms the rule on the board: then the trigger switch fires the coil
+			# by itself (Godot never fires a rule).
+			var armed := CheckButton.new()
+			armed.text = "Armed"
+			armed.button_pressed = PinballIO.get_coil_rule(c.name)
+			armed.toggled.connect(func(on: bool) -> void: PinballIO.set_coil_rule(c.name, on))
+			row.add_child(armed)
 		row.add_child(UiKit.button("Edit", _open_coil_wizard.bind(c.name)))
 		row.add_child(UiKit.button("Delete", _ask_delete_coil.bind(c.name), UiKit.DANGER))
+	body.add_child(UiKit.note("Armed: the coil's trigger switch fires it on the board. ←/→ keys fire the first two coils."))
+
+
+func _set_all_rules(on: bool) -> void:
+	PinballIO.set_all_rules(on)
+	_rebuild()   # so the Armed toggles show the new state
 
 
 func _build_switches() -> void:
@@ -150,22 +197,45 @@ func _build_switches() -> void:
 	body.add_child(UiKit.note("The lamp shows the switch live while a board is running. A coil's setup can also create its switches."))
 
 
+## One button per lamp that cycles OFF / ON / BLINK. A placeholder: lighting
+## will become WS2812B LED chains.
+func _build_lamps() -> void:
+	if MachineConfig.lamps.is_empty():
+		return
+	var body := UiKit.section(_list, "Lamps")
+	var row := _flow()
+	body.add_child(row)
+	for l in MachineConfig.lamps:
+		var b := UiKit.button("", Callable(), UiKit.TEST)
+		b.text = "%s · pin %d: %s" % [l.name, l.pin, PinballIO.get_lamp_mode(l.name)]
+		b.pressed.connect(_cycle_lamp.bind(l, b))
+		row.add_child(b)
+	body.add_child(UiKit.detail("All lighting will be WS2812B LED chains, set up in a later version."))
+
+
+func _cycle_lamp(l: IoDefs.LampDef, button: Button) -> void:
+	var modes: Array[String] = PinballIO.LAMP_MODES
+	var next: String = modes[(modes.find(PinballIO.get_lamp_mode(l.name)) + 1) % modes.size()]
+	PinballIO.set_lamp(l.name, next)
+	button.text = "%s · pin %d: %s" % [l.name, l.pin, next]
+
+
 func _build_footer() -> void:
 	var problems := MachineConfig.validate()
 	if not problems.is_empty():
 		var errors := UiKit.section(_list, "Problems")
 		for problem in problems:
 			errors.add_child(UiKit.colored(problem, UiKit.BAD_COLOR))
-	var body := UiKit.section(_list, "Machine")
-	var row := HFlowContainer.new()
-	row.add_theme_constant_override("h_separation", 12)
-	row.add_theme_constant_override("v_separation", 8)
-	row.add_child(UiKit.button("Reset to default layout", _ask_reset, UiKit.DANGER))
-	# On a touch screen with no keyboard, this is the only way out of fullscreen.
-	row.add_child(UiKit.button("Quit to desktop", _ask_quit, UiKit.DANGER))
-	body.add_child(row)
+	var body := UiKit.section(_list, "Layout")
+	body.add_child(UiKit.button("Reset to default layout", _ask_reset, UiKit.DANGER))
 	body.add_child(UiKit.detail("Layout file: " + ProjectSettings.globalize_path(MachineConfig.loaded_from)))
-	body.add_child(UiKit.detail("Lamps: all lighting will be WS2812B LED chains, set up in a later version."))
+
+
+func _flow() -> HFlowContainer:
+	var f := HFlowContainer.new()
+	f.add_theme_constant_override("h_separation", 12)
+	f.add_theme_constant_override("v_separation", 8)
+	return f
 
 
 ## A coil in a few words, e.g. "60 ms → hold 50% · trigger flipper_left_button · EOS flipper_left_eos".
@@ -189,6 +259,8 @@ func _describe_switch(i: IoDefs.InputDef) -> String:
 		parts.append(i.kind)
 	if i.nc:
 		parts.append("NC")
+	if i.sound != &"":
+		parts.append("sound %s%s" % [i.sound, "" if Media.has_sound(i.sound) else " (file missing)"])
 	for c in MachineConfig.coils:
 		if c.trigger == i.name:
 			parts.append("trigger of " + c.name)
@@ -267,14 +339,6 @@ func _delete_input(input_name: StringName) -> void:
 func _ask_reset() -> void:
 	_ask("Throw away this machine's saved layout and go back to the project's default layout?",
 			MachineConfig.reset_to_default)
-
-
-func _ask_quit() -> void:
-	_ask("Quit Loso Pinball and go back to the desktop?", _quit)
-
-
-func _quit() -> void:
-	get_tree().quit()
 
 
 func _save_and_apply() -> void:

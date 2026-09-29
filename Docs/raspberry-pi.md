@@ -86,13 +86,13 @@ This is the fastest way to see the project working on real hardware: no export s
    ```
    Your SSH session drops. Wait a minute, then `ssh` back in.
 
-7. **Plug in the Teensy and run the project.** It opens on the attract-mode placeholder; touch **Service** (bottom-right) to open the service menu, then the **Diagnostics** tab:
+7. **Plug in the Teensy and run the project.** It opens on the attract screen; touch **Service** (bottom-right) to open the service menu, then the **Hardware** tab:
    ```sh
    ~/godot/Godot_v4.6.1-stable_linux.arm64 --path ~/loso-pinball-engine --display-driver wayland --rendering-driver opengl3_es
    ```
    The window appears on the **Pi's own screen**, even when you start it from SSH. The two flags tell Godot the right choices up front (see below); without them it still works, it just tries and fails the wrong ones first.
 
-8. **In the panel:** pick `/dev/ttyACM0`, click **Connect**, and check **"Auto-connect at startup"** so it reconnects on its own from now on. Then press a switch and pulse a coil to confirm the round trip. See [Diagnostics panel](diagnostics-panel.md) for what everything on screen does.
+8. **Under Connection:** pick `/dev/ttyACM0`, click **Connect**, and check **"Auto-connect at startup"** so it reconnects on its own from now on. Then press a switch and **Fire** a coil, and watch the LEDs and log on the **Monitor** tab to confirm the round trip. See [Service menu](service-menu.md) for what everything on screen does.
 
 The GdSerial plugin already has a `linux-arm64` binary in the repo (`addons/gdserial/bin/linux-arm64/libgdserial.so`, wired up in `gdserial.gdextension`), and the renderer is already set to GL Compatibility in `project.godot`, so there's nothing else to configure.
 
@@ -111,9 +111,11 @@ Don't skip the import. Scripts that declare a `class_name` (like `IoDefs` or `Bo
 
 If `git pull` complains about local changes you don't care about, discard them first with `git checkout -- .`.
 
+Sounds, music and video aren't in git. They sync from the PC to the Pi's `assets/` folder separately, with Syncthing or `scp`; see [Audio, music and video](audio-video.md#getting-media-from-the-pc-to-the-pi). After new media arrives, run the same import, or tap **Update Loso Pinball**.
+
 ### Small screens
 
-Everything is laid out for 1280×720 and scaled to fit the screen, so it works at any resolution. On a small display, such as the 800×480 bench screen, touch **Service**, then on the **Setup** tab keep **UI scale** at 100% with **Text size** 200% (the default). It runs fullscreen by default; the **Screen** section at the top of the Setup tab has the Fullscreen box to turn that off. All of these are remembered on the Pi. If the screen is smaller than 1280×720, the window also starts maximized automatically.
+Everything is laid out for 1280×720 and scaled to fit the screen, so it works at any resolution. On a small display, such as the 800×480 bench screen, touch **Service**, then on the **Audio & Video** tab keep **UI scale** at 100% with **Text size** 200% (the default). It runs fullscreen by default; its **Screen** section has the Fullscreen box to turn that off. All of these are remembered on the Pi. If the screen is smaller than 1280×720, the window also starts maximized automatically.
 
 ### Desktop icons (skip the typing)
 

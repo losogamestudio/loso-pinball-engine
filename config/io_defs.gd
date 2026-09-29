@@ -61,10 +61,12 @@ class InputDef:
 	var debounce_ms: int = 5
 	var kind: String = "switch"      ## one of IoDefs.KINDS (Godot only)
 	var points: int = 0              ## for target/spinner: points per close
+	var sound: StringName = &""      ## optional Media sound played when it closes during a game (Godot only)
 
 	func to_dict() -> Dictionary:
 		return {"name": String(name), "board": String(board), "pin": pin,
-				"nc": nc, "debounce_ms": debounce_ms, "kind": kind, "points": points}
+				"nc": nc, "debounce_ms": debounce_ms, "kind": kind, "points": points,
+				"sound": String(sound)}
 
 	static func from_dict(d: Dictionary) -> InputDef:
 		var i := InputDef.new()
@@ -75,6 +77,7 @@ class InputDef:
 		i.debounce_ms = int(d.get("debounce_ms", 5))
 		i.kind = str(d.get("kind", "switch"))   # older config files have no kind
 		i.points = int(d.get("points", 0))
+		i.sound = StringName(d.get("sound", ""))
 		return i
 
 

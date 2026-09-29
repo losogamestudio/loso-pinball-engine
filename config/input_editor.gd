@@ -1,5 +1,5 @@
 extends VBoxContainer
-## InputEditor — one-page setup for one switch input, shown inside the Setup tab.
+## InputEditor — one-page setup for one switch input, shown inside the Hardware tab.
 ##
 ## Like the coil wizard it edits a draft: "Send to board" lets you press the
 ## real switch and watch its lamp, and nothing is written to disk until Save.
@@ -139,6 +139,7 @@ func _build() -> void:
 				func(v: float) -> void: _draft.points = int(v))
 		points.custom_minimum_size.x = 240   # room for 7 digits at big text sizes
 		_body.add_child(UiKit.field("Points per hit", points))
+	_body.add_child(_build_sound_row())
 	_body.add_child(UiKit.note("Plain switch: flipper buttons, EOS and anything game code reads by name. Point target: scores its points every time it closes. Spinner: scores every close, once per spin (use 1 ms debounce). Drain: the outhole switch, ends the ball. Start button: starts a game from the attract screen."))
 
 	var users := MachineConfig.coils_using_input(_original_name) if _original_name != &"" else PackedStringArray()
@@ -159,6 +160,28 @@ func _on_name_changed(text: String) -> void:
 
 func _on_pin_picked(index: int, picker: OptionButton) -> void:
 	_draft.pin = picker.get_item_id(index)
+
+
+## "Sound: [picker] [Play]". The sound plays when the switch closes during a
+## game; modes can change it (Game.set_switch_sound).
+func _build_sound_row() -> HBoxContainer:
+	var pick := OptionButton.new()
+	pick.add_item("(none)")
+	pick.set_item_metadata(0, &"")
+	var sounds := Media.list_sounds()
+	if _draft.sound != &"" and not sounds.has(_draft.sound):
+		sounds.push_front(_draft.sound)   # keep a sound whose file isn't synced to this machine yet
+	for sound in sounds:
+		pick.add_item(String(sound) if Media.has_sound(sound) else "%s (file missing)" % sound)
+		pick.set_item_metadata(pick.item_count - 1, sound)
+		if sound == _draft.sound:
+			pick.select(pick.item_count - 1)
+	pick.item_selected.connect(func(index: int) -> void:
+		_draft.sound = pick.get_item_metadata(index)
+		Media.play_sfx(_draft.sound))   # preview the new pick
+	var row := UiKit.field("Sound (during a game)", pick)
+	row.add_child(UiKit.button("Play", func() -> void: Media.play_sfx(_draft.sound), UiKit.TEST))
+	return row
 
 
 ## New kind: rebuild (Points only shows for scoring kinds). Picking a target or
@@ -209,7 +232,7 @@ func _update_status() -> void:
 	if _status_label == null:
 		return
 	if PinballIO.get_port_for_board(_draft.board).is_empty():
-		_status_label.text = "Board '%s' isn't connected, so the lamp can't show the switch. (Connect on the Diagnostics tab.)" % _draft.board
+		_status_label.text = "Board '%s' isn't connected, so the lamp can't show the switch. (Connect at the top of the Hardware tab.)" % _draft.board
 	elif _applied or _original_name != &"":
 		_status_label.text = "Press the switch: the lamp next to the pin lights while it's active."
 		_status_label.add_theme_color_override("font_color", UiKit.OK_COLOR)

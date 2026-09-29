@@ -10,7 +10,7 @@ class_name DisplaySettings
 ##               at UI scale 100%)
 ##
 ## Saved per machine in user://display.cfg (not in git), applied at startup by
-## main.gd and changed live from the Setup page. Static: DisplaySettings.apply_saved().
+## main.gd and changed live from the Audio & Video tab. Static: DisplaySettings.apply_saved().
 
 const PATH := "user://display.cfg"
 const DESIGN_SIZE := Vector2i(1280, 720)   ## keep in sync with display/window/size in project.godot
@@ -21,7 +21,7 @@ const SCALES: Array[float] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 const TEXT_SCALES: Array[float] = [1.0, 1.3, 1.6, 2.0, 2.4]
 const DEFAULT_TEXT_SCALE := 2.0
 const BASE_FONT_SIZE := 16   ## Godot's default font size, before text scaling
-const DEFAULT_FULLSCREEN := true   ## until the Setup tab's Fullscreen box is unticked
+const DEFAULT_FULLSCREEN := true   ## until the Fullscreen box (Audio & Video tab) is unticked
 
 static var _text_scale_cache := 0.0   ## so font_size() doesn't read the file for every label
 static var _text_theme: Theme          ## shared by every screen; see text_theme()
@@ -83,7 +83,7 @@ static func font_size(base: int) -> int:
 	return roundi(base * get_text_scale())
 
 
-## The physical screen size, for showing on the Setup page.
+## The physical screen size, for showing on the Audio & Video tab.
 static func screen_size() -> Vector2i:
 	return DisplayServer.screen_get_size()
 

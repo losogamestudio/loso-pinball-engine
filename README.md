@@ -34,7 +34,8 @@ Start in [`Docs/README.md`](Docs/README.md) for the full set. Highlights:
 - [Architecture](Docs/architecture.md) — the Teensy/Godot split, and why.
 - [Machine configuration](Docs/configuration.md) — which pin is which switch, coil or lamp, and how coil rules are set up.
 - [Serial protocol](Docs/serial-protocol.md) — the wire protocol, with an example session.
-- [Diagnostics panel](Docs/diagnostics-panel.md) — what every control in `control.tscn` does.
+- [Service menu](Docs/service-menu.md) — the Monitor, Hardware and Audio & Video tabs, control by control.
+- [Audio, music and video](Docs/audio-video.md) — sounds, the music manager, cutscenes, and syncing media (not in git) to the Pi.
 - [Deploying to a Raspberry Pi](Docs/raspberry-pi.md) — from imaging the SD card to a working bench test, up to a full kiosk build.
 
 ## Repo layout
@@ -63,7 +64,7 @@ res://
 1. Install **Godot 4.4+**, standard build (not .NET) — this project is GDScript only.
 2. Open the project folder in Godot. The GdSerial plugin is already vendored under `addons/gdserial` and enabled in `project.godot`, so there's nothing extra to install there.
 3. Flash `Firmware/pinio/pinio.ino` to a Teensy 4.1 with Arduino IDE + Teensyduino (USB Type: "Serial"). The bench wiring for the default config is in [`Docs/getting-started.md`](Docs/getting-started.md).
-4. Run the project. It opens on an attract-mode placeholder; click **Service** (bottom-right) or press **P** to open the service menu, then the **Diagnostics** tab. Pick your Teensy's serial port from the dropdown and hit **Connect**.
+4. Run the project. It opens on the attract screen; click **Service** (bottom-right) or press **P** to open the service menu, then the **Hardware** tab. Pick your Teensy's serial port under **Connection** and hit **Connect**, then watch the **Monitor** tab.
 5. Once linked, check "Auto-connect at startup" if you want it to remember that port and reconnect automatically next time.
 
 Full walkthrough (hardware shopping list, headless testing, what to expect on screen): [`Docs/getting-started.md`](Docs/getting-started.md).
@@ -74,16 +75,20 @@ The real cabinet target is a **Raspberry Pi 4 or later** — desktops are for de
 
 ## What's working right now
 
-The base scene (`main.tscn`) starts on an attract-mode placeholder, and **P** opens a **diagnostics panel** for the serial link and I/O. The panel is meant to keep growing into the full diagnostics page for the real machine:
+The base scene (`main.tscn`) starts on the attract screen: the title, **Start game** for a 3-ball game with a score, and **Service**. Service (or **P**) opens the service menu, which has three tabs:
 
-- **P → Setup**: add and edit coils with a step-by-step wizard (flipper / sling / kicker / diverter presets, output pin, trigger and end-of-stroke switches, power, then live test-firing before saving), edit switches, and burn the layout to the board.
-- The whole I/O layout comes from one machine config file. On link, Godot checks it and sends it to the board, which then runs flippers (trigger → full power → EOS → PWM hold), slings and pops entirely by itself.
-- Port picker with auto-connect: remembers the last port a board actually answered on, and can reconnect to it automatically on startup.
-- Live link/board status, plus a heartbeat lamp that pulses on every `HB` from the board — so a frozen board is visibly different from a merely-quiet one.
-- A named lamp per switch, a pulse button and rule toggle per coil (with Left/Right arrow-key shortcuts for bench testing — there's no keyboard on the real cabinet), lamp mode cycling, arm/disarm all rules, and round-trip ping — all generated from the config.
-- A scrolling log of everything crossing the link in both directions, plus any config problems.
+- **Monitor**: an LED for every input, coil and lamp, showing only its pin number and grouped per board. Also a heartbeat LED that pulses on every `HB` from the board, so a frozen board looks different from a quiet one. The right two thirds is a log of everything crossing the link in both directions, plus any config problems.
+- **Hardware**:
+  - Port picker with auto-connect, which remembers the last port a board actually answered on.
+  - Board status and **Burn** (store the layout on the board).
+  - Coils: add and edit them with a step-by-step wizard (flipper / sling / kicker / diverter presets, output pin, trigger and end-of-stroke switches, power, then live test-firing before saving). Each coil has **Fire** and **Armed**, plus Arm all / Disarm all.
+  - Switches: edit each one (kind, points, sound), with a live lamp.
+  - Lamp mode cycling.
+- **Audio & Video**: screen size and text size, fullscreen, volume per bus, and test sounds and music. Also media players for checking synced music and cutscenes.
 
-Full walkthrough of every control: [`Docs/diagnostics-panel.md`](Docs/diagnostics-panel.md).
+The whole I/O layout comes from one machine config file. On link, Godot checks it and sends it to the board, which then runs flippers (trigger → full power → EOS → PWM hold), slings and pops entirely by itself.
+
+Full walkthrough of every control: [`Docs/service-menu.md`](Docs/service-menu.md).
 
 ## Serial protocol
 
@@ -94,7 +99,7 @@ Plain ASCII, one message per line, ending in `\n`. Full message tables (Teensy�
 ## Roadmap
 
 1. ✅ Serial link, test sketch, `PinballIO` autoload, diagnostics panel.
-2. Configurable I/O (in progress): ✅ always-loaded base scene, ✅ generic PINIO 0.2 firmware with the configurable coil rule (flippers, slings, pops), ✅ machine config + name-based `PinballIO`, ✅ burn layout to board, ✅ Setup tab with the coil wizard. Next: several boards at once, WS2812B LED chains for lighting, and Arduino Uno support.
+2. Configurable I/O (in progress): ✅ always-loaded base scene, ✅ generic PINIO 0.2 firmware with the configurable coil rule (flippers, slings, pops), ✅ machine config + name-based `PinballIO`, ✅ burn layout to board, ✅ service menu (Monitor / Hardware / Audio & Video) with the coil wizard. Next: several boards at once, WS2812B LED chains for lighting, and Arduino Uno support.
 3. Game state skeleton: attract → game start → ball in play → drain → next ball → game over, enabling/disabling hardware rules per state.
 4. Real playfield layout in the machine config.
 5. Audio, video, and a score display in Godot. Video cutscenes need validating on real Pi 4 hardware before much production time goes into them — see "Deploying to a Raspberry Pi" above.

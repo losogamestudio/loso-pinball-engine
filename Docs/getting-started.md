@@ -50,12 +50,12 @@ The onboard LED (pin 13) is the **status LED**:
 
 ### 4. Run the project
 
-Hit Play (or run it directly — see below). The base scene, `main.tscn`, opens on the attract screen: **Loso Pinball Engine** in cyan, a **Start game** button (starts a 3-ball game; the game screen shows the score, the ball number and **Abort game**, plus purple bench-test buttons: **Extra ball** and **Drain ball** on the left, a grid of point buttons on the right), and **Service**. Click **Service** (bottom-right) or press **P** to open the service menu, then the **Diagnostics** tab ([diagnostics panel](diagnostics-panel.md)); **Exit** closes it:
+Hit Play (or run it directly — see below). The base scene, `main.tscn`, opens on the attract screen: **Loso Pinball Engine** in cyan, a **Start game** button (starts a 3-ball game; the game screen shows the score, the ball number and **Abort game**, plus purple bench-test buttons: **Extra ball** and **Drain ball** on the left, a grid of point buttons on the right), and **Service**. Click **Service** (bottom-right) or press **P** to open the service menu, then the **Hardware** tab ([service menu](service-menu.md)); **Exit** closes it:
 
-1. Pick your Teensy's port from the dropdown (it'll show up as something like `COM9` on Windows or `/dev/ttyACM0` on Linux) and hit **Connect**.
-2. Within a second the status goes "Linked on …: PINIO 0.2, sending config…", then "Ready: board 'main' configured". The log shows the `CFG` lines going out and `ACK CFG 3 3 1 <fingerprint>` coming back, and the Teensy's status LED goes solid. Click **Burn layout to board** to store it on the Teensy: from then on it boots configured, and on the next connect Godot sees the fingerprints match and sends nothing.
-3. The green "Board HB" lamp pulses once a second. That's proof the Teensy is alive and talking, not just that the OS thinks the port is open.
-4. Try the coil buttons (or the **Left/Right arrow keys**; see [diagnostics panel](diagnostics-panel.md) for why keyboard shortcuts exist at all) and cycle the lamp's mode. Then check **Rule from flipper_left_button** (under flipper_left) and hold the button on pin 33: the LED on pin 2 is bright for 60 ms, then dims to 50% until you let go (pressing 34, the EOS, dims it sooner). Arm the sling rule and press 35 to see `FIRED 1` in the log and the score jump.
+1. Under **Connection**, pick your Teensy's port from the dropdown (it'll show up as something like `COM9` on Windows or `/dev/ttyACM0` on Linux) and hit **Connect**.
+2. Within a second the status reads "Ready: every board is running its layout". The log on the **Monitor** tab shows the `CFG` lines going out and `ACK CFG 3 3 1 <fingerprint>` coming back, and the Teensy's status LED goes solid. Click **Burn** (under **Boards**) to store it on the Teensy: from then on it boots configured, and on the next connect Godot sees the fingerprints match and sends nothing.
+3. On the **Monitor** tab, the green heartbeat LED pulses once a second. That's proof the Teensy is alive and talking, not just that the OS thinks the port is open.
+4. Try the coils' **Fire** buttons (or the **Left/Right arrow keys**) and cycle the lamp's mode, and watch the LEDs on the **Monitor** tab. Then turn on **Armed** on flipper_left and hold the button on pin 33: the LED on pin 2 is bright for 60 ms, then dims to 50% until you let go (pressing 34, the EOS, dims it sooner). Arm the sling rule and press 35 to see `FIRED 1` in the log and coil LED 26 flash.
 5. Once it's linked the way you want, check **"Auto-connect at startup"** — next time you run the project, it'll remember that port and reconnect on its own.
 
 ### 5. Running headless (no window, useful for scripting/CI)
@@ -79,5 +79,5 @@ It prints `PASS`/`FAIL` per check and ends with `ALL PASSED`.
 - [Architecture](architecture.md) if you want the *why* behind the Teensy/Godot split before changing anything.
 - [Machine configuration](configuration.md) to change which pin is which switch, coil or lamp.
 - [Serial protocol](serial-protocol.md) if you're touching the wire format.
-- [Diagnostics panel](diagnostics-panel.md) for what every control on screen actually does.
+- [Service menu](service-menu.md) for what every control on screen actually does.
 - [Deploying to a Raspberry Pi](raspberry-pi.md) once you're ready to get off the desktop.

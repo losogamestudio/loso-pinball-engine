@@ -26,13 +26,13 @@ func _run() -> void:
 	_config = root.get_node("MachineConfig")
 	CoilWizardScript = load("res://config/coil_wizard.gd")
 	InputEditorScript = load("res://config/input_editor.gd")
-	SetupPageScript = load("res://config/setup_page.gd")
+	SetupPageScript = load("res://config/hardware_page.gd")
 	var saved_layout: Dictionary = _config.snapshot()
 	# Always start from the shipped default, whatever this machine has saved.
 	var default_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://config/machine_config.default.json"))
 	_config.restore(default_data, false)
 
-	await _test_setup_page_lists_things()
+	await _test_hardware_page_lists_things()
 	await _test_add_flipper_with_new_switches()
 	await _test_name_and_pin_rules()
 	await _test_rename_switch_follows_coils()
@@ -97,13 +97,13 @@ func _all_text(node: Node) -> String:
 
 # ---------------------------------------------------------------- tests
 
-func _test_setup_page_lists_things() -> void:
+func _test_hardware_page_lists_things() -> void:
 	var page: Control = SetupPageScript.new()
 	root.add_child(page)
 	await _frames()
 	var text := _all_text(page)
-	_check(text.contains("flipper_left") and text.contains("sling_left_switch") and text.contains("+ Add coil"),
-			"setup page lists coils, switches and the add buttons")
+	_check(text.contains("flipper_left") and text.contains("sling_left_switch") and text.contains("+ Add coil") and text.contains("Connection"),
+			"hardware page lists connection, coils, switches and the add buttons")
 	page.queue_free()
 	await _frames()
 

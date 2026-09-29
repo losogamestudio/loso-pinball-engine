@@ -16,7 +16,7 @@ The project is also meant to become a **beginner-friendly reference build** that
 
 The game brain's end home is a **Raspberry Pi 4 or later**, not a desktop PC. The desktop is for development; the Pi is the deployment target for the actual cabinet. Concretely:
 
-- **Screen scaling**: everything is laid out for **1280×720** and stretched to the real screen (`display/window/stretch/mode = canvas_items`, aspect `expand`). A per-machine UI scale (multiplier via `Window.content_scale_factor`), a separate **text size** (default 200%, a shared `Theme` from `DisplaySettings.text_theme()` that each screen sets on its root Control, since themes do not flow through the CanvasLayer; labels that set their own size must use `DisplaySettings.font_size(base)`), and fullscreen live in `DisplaySettings` (`config/display_settings.gd`, saved in `user://display.cfg`), applied in `main.gd` `_ready` and set from the Setup page. The current bench Pi screen is **800×480**: UI scale 100% with text size 200% is the readable setting there; layouts must still fit (rows wrap, pages scroll). Service screens use `UiKit.scroll_container()`: vertical bar always shown, 3× default width for touch (widened via its styleboxes, not custom_minimum_size, which the ScrollContainer ignores when reserving space).
+- **Screen scaling**: everything is laid out for **1280×720** and stretched to the real screen (`display/window/stretch/mode = canvas_items`, aspect `expand`). A per-machine UI scale (multiplier via `Window.content_scale_factor`), a separate **text size** (default 200%, a shared `Theme` from `DisplaySettings.text_theme()` that each screen sets on its root Control, since themes do not flow through the CanvasLayer; labels that set their own size must use `DisplaySettings.font_size(base)`), and fullscreen live in `DisplaySettings` (`config/display_settings.gd`, saved in `user://display.cfg`), applied in `main.gd` `_ready` and set from the Audio & Video tab. The current bench Pi screen is **800×480**: UI scale 100% with text size 200% is the readable setting there; layouts must still fit (rows wrap, pages scroll). Service screens use `UiKit.scroll_container()`: vertical bar always shown, 3× default width for touch (widened via its styleboxes, not custom_minimum_size, which the ScrollContainer ignores when reserving space).
 - `project.godot` already sets the renderer to **GL Compatibility** (OpenGL ES 3 under the hood). That's deliberate and Pi-appropriate — don't suggest switching to the Forward+ (Vulkan) renderer for this project, since the Pi's GPU doesn't run it well.
 - **Video cutscenes are the one open risk.** Godot 4's built-in `VideoStreamPlayer` only decodes Ogg Theora, entirely in software — there is no hardware-accelerated video path in core Godot on Linux/Pi. That's fine on a desktop but can bog down a Pi 4's CPU at higher resolutions or framerates.
   - Don't assume heavy video cutscenes will just work on the Pi. Before investing real production time in cutscene content, encode a representative test clip and play it back on real Pi 4 hardware to see actual dropped-frame/CPU behavior — don't extrapolate from how it runs on a desktop.
@@ -59,16 +59,20 @@ res://
 ├── board_link.gd             # class BoardLink: one serial link speaking PINIO 0.2 (no GdSerial inside)
 ├── boards/board_types.gd     # class BoardTypes: what each board type's pins can do (mirror of board_<type>.h)
 ├── config/                   # Autoload "MachineConfig", IoDefs records, machine_config.default.json,
-│                             #   and the service menu: service_menu.tscn/.gd (top bar with Exit, Setup + Diagnostics tabs),
-│                             #   setup_page.gd, coil_wizard.gd, input_editor.gd, ui_kit.gd (UiKit helpers),
+│                             #   and the service menu: service_menu.tscn/.gd (top bar with Quit + Exit; tabs Monitor | Hardware | Audio & Video),
+│                             #   hardware_page.gd, av_page.gd, coil_wizard.gd, input_editor.gd, ui_kit.gd (UiKit helpers),
 │                             #   display_settings.gd (DisplaySettings: UI scale + fullscreen)
 ├── test/                     # headless tests (test_config_link.gd, test_setup_ui.gd)
 ├── tools/pi/                 # Pi helper scripts: run.sh, update.sh (git pull + --import), install-desktop-icons.sh
 ├── game/game.gd              # Autoload "Game": start / 3 balls / score / abort, scoring by switch kind
+├── media/media.gd            # Autoload "Media": sound effects, music (crossfade, push/pop), cutscene video, bus volumes
+├── assets/                   # sfx/, music/, video/ — NOT in git except README + test/ folders (synced PC → Pi)
+├── default_bus_layout.tres   # audio buses: Master ← Music, SFX, Video
+├── tools/make_test_sounds.gd # writes the generated test sounds in assets/**/test/
 ├── main.tscn / main.gd       # Base scene (the main scene): always loaded, hosts modes + service page
 ├── modes/                    # Mode scenes swapped into Main's ModeHost: attract.tscn/.gd (title, Start game, Service),
 │                             #   game_play.tscn/.gd (score, ball, Abort game, test buttons: cheats left, point grid right)
-├── control.tscn              # Diagnostics panel (root Control + test_panel.gd), the Diagnostics tab of the service menu
+├── control.tscn              # Monitor tab of the service menu (root Control + test_panel.gd): I/O LEDs (pin numbers) + log
 ├── test_panel.gd
 └── Firmware/
     └── pinio/                      # PINIO 0.2 generic firmware: pinio.ino + board_<type>.h (Arduino IDE + Teensyduino)
@@ -78,7 +82,12 @@ The original files live flat at the project root — that's how the user placed 
 
 **Scene structure**: `main.tscn` is always loaded (like Unreal's persistent level). It has a `ModeHost` node holding exactly one mode scene, swapped with `Main.show_mode(scene)`, and a `ServiceLayer` CanvasLayer on top that loads the service page on open and frees it on close (`open_service()` / `close_service()` / `toggle_service()`). `Main` swaps attract ⇄ game_play on `Game.game_started` / `Game.game_ended`; modes call `Game.start_game()` / `abort_game()` / `end_ball()` and never switch scenes themselves. The service page opens from the attract screen's touch **Service** button (the mode emits `service_requested`; Main connects it for any mode that has that signal) or the P key (`Main.SERVICE_KEY`; not F1, the Pi on-screen keyboard has no function keys). It closes from the menu's **Exit** button (`exit_requested`) or P.
 
-**The UI is touch-first** (Pi touchscreen, no keyboard): every action needs an on-screen button, big enough for a finger (~56 px tall for primary buttons like Service/Exit). Keyboard shortcuts are extras only. Anything that would otherwise need a keyboard (e.g. leaving fullscreen, which is the default: `DisplaySettings.DEFAULT_FULLSCREEN`) needs a button, like the Fullscreen box at the top of the Setup tab and "Quit to desktop". Don't use `get_tree().change_scene_to_*()` — that would unload Main.
+**Service menu tabs** (left to right; see `Docs/service-menu.md`):
+- **Monitor** (`control.tscn` + `test_panel.gd`): the left third has an LED per input/coil/lamp showing only the pin number, grouped per board, plus the heartbeat LED. Coil LEDs show what Godot knows (`coil_commanded`, `coil_fired`, held flippers), with a cyan outline when the rule is armed. The right two thirds is the log.
+- **Hardware** (`config/hardware_page.gd`): Connection, Boards (Burn), Coils (Fire / Armed / Edit / Delete, Arm all), Switches, Lamps, Layout reset.
+- **Audio & Video** (`config/av_page.gd`): Screen, Audio volumes and tests, the Media library (music/video players, Rescan).
+
+**The UI is touch-first** (Pi touchscreen, no keyboard): every action needs an on-screen button, big enough for a finger (~56 px tall for primary buttons like Service/Exit). Keyboard shortcuts are extras only. Anything that would otherwise need a keyboard (e.g. leaving fullscreen, which is the default: `DisplaySettings.DEFAULT_FULLSCREEN`) needs a button, like the Fullscreen box on the Audio & Video tab and the Quit button in the service menu top bar. Don't use `get_tree().change_scene_to_*()` — that would unload Main.
 
 **Service screen look** (`UiKit`): the shared theme (`UiKit.style_theme`, applied inside `DisplaySettings.text_theme()`) gives buttons, dropdowns, fields and tabs gray backgrounds.
 - **Layout**: each group is a `UiKit.section()` card with a cyan heading. Each item is a `UiKit.row_card()` holding a `UiKit.name_block(name, details)`: the name on top, small dim details underneath (`DETAIL_SIZE`), buttons on the right.
@@ -96,7 +105,7 @@ If the actual files are somewhere else, update this section. Don't move files th
    - Installed at `addons/gdserial`, enabled under Project → Project Settings → Plugins.
    - We use the async class `GdSerialManager`: `open(name, baud, timeout_ms, mode)`, `write(name, PackedByteArray)`, `close(name)`, `list_ports()`, and `poll_events()`, which must be called every frame in `_process`. Its signals are `data_received(port, data)` and `port_disconnected(port)`.
    - We open ports in `MODE_RAW` (the default) and split lines ourselves in `board_link.gd`.
-3. **Autoloads** (Project Settings → Globals → Autoload), in this order: `config/machine_config.gd` as **`MachineConfig`**, then `pinball_io.gd` as **`PinballIO`**, then `game/game.gd` as **`Game`**.
+3. **Autoloads** (Project Settings → Globals → Autoload), in this order: `config/machine_config.gd` as **`MachineConfig`**, then `pinball_io.gd` as **`PinballIO`**, then `game/game.gd` as **`Game`**, then `media/media.gd` as **`Media`**.
    - ⚠️ Godot names it `PinballIo` from the filename by default. It must be renamed to exactly `PinballIO`, or every script fails with *Identifier "PinballIO" not declared*.
 4. **Teensy**: Teensy 4.1 (the only board type so far), Arduino IDE with Teensyduino, USB Type "Serial". Flash `Firmware/pinio/`. Baud is ignored on Teensy USB, but GdSerial requires a value, so we pass 115200. The Teensy doesn't reset when the port opens, so there are no DTR concerns.
 5. **Linux (including the Raspberry Pi)**: the user must be in the `dialout` group to open serial ports. The Pi runs the project without the editor, so after every `git pull` it needs `godot --headless --import --path .` to refresh the `class_name` list in `.godot/` (not in git); otherwise new `class_name` scripts fail with "Could not find type". See the README's "Deploying to a Raspberry Pi" section for the full Pi-specific setup.
@@ -178,7 +187,7 @@ Game code must **only** talk to hardware through `PinballIO`, never through GdSe
 
 Everything is by **name** (StringName) from `MachineConfig`, never by pin or board index.
 
-Signals: `switch_changed(switch_name, active)`, `coil_fired(coil_name)`, `board_ready(board_id)`, `board_lost(board_id)`, `board_problem(port, message)`, `board_notice(port, message)`, `board_burned(board_id)`, `port_linked(port, firmware, board_type, uid)`, `port_unlinked(port)`, `watchdog_changed(board_id, tripped)`, `latency_measured(port, ms)`, `heartbeat(port, millis)`, `line_received(port, line)`, `line_sent(port, line)`.
+Signals: `switch_changed(switch_name, active)`, `coil_fired(coil_name)`, `coil_commanded(coil_name, on, is_pulse)` (Godot sent PULSE/HOLD; for displays), `board_ready(board_id)`, `board_lost(board_id)`, `board_problem(port, message)`, `board_notice(port, message)`, `board_burned(board_id)`, `port_linked(port, firmware, board_type, uid)`, `port_unlinked(port)`, `watchdog_changed(board_id, tripped)`, `latency_measured(port, ms)`, `heartbeat(port, millis)`, `line_received(port, line)`, `line_sent(port, line)`.
 
 Functions: `pulse_coil(name, ms := -1)`, `hold_coil(name, on)`, `set_coil_rule(name, on)`, `set_all_rules(on)`, `get_coil_rule(name)`, `set_lamp(name, "ON"|"OFF"|"BLINK")`, `get_lamp_mode(name)`, `is_switch_active(name)`, `list_ports()`, `open_port(port)`, `close_port(port := "")` (empty = all), `get_open_ports()`, `is_any_port_open()`, `is_ready()` (every configured board ready), `get_port_for_board(board_id)`, `burn_board(board_id)`, `is_board_burned(board_id)`, `ping()`, `send_raw(port, line)` (debugging), `set_auto_connect(on)`.
 
@@ -202,11 +211,28 @@ Autoload **`MachineConfig`** (`config/machine_config.gd`), listed **above** Pinb
 - **State**: `state`, `ball`, `score` (kept after the game as the last score), `extra_balls`, `balls_per_game`.
 - **Signals**: `game_started`, `ball_started(ball)`, `score_changed(score)`, `extra_balls_changed(count)`, `game_ended(aborted)`.
 
-The game screen's bench-test buttons (`SHOW_TEST_BUTTONS` in `modes/game_play.gd`, to become a Setup setting) call the same Game functions real switches do:
+The game screen's bench-test buttons (`SHOW_TEST_BUTTONS` in `modes/game_play.gd`, to become a service-menu setting) call the same Game functions real switches do:
 - Left column: cheats from `_cheats()`. Extra ball and Drain ball exist now. Planned: Last ball, Tilt, Ball save, Kick out, Rules off/on.
 - Right: a 2-column grid of point buttons from `TEST_POINTS`.
 
 It scores from `PinballIO.switch_changed` by each input's kind, and disarms the rules at game end. Game events that need outputs (ball kickout, drop target reset, diverters) go here as direct `PinballIO.pulse_coil`/`hold_coil`/`set_lamp` calls. Later: kickout on `ball_started`, tilt, ball save, match.
+
+## Media (autoload): audio and video
+
+`media/media.gd`, registered as **`Media`** after Game. Everything is by **name**, the file name without its extension, found by scanning `res://assets/sfx|music|video/` (subfolders too) with `ResourceLoader.list_directory`. A missing name warns once and does nothing; it never crashes, because media isn't in git.
+
+- **Sound effects**: `play_sfx(name, volume_db, pitch)` (16 voices, oldest reused), `play_optional_sfx(name)` (silent if missing).
+- **Music**: `play_music(name, fade)` (A/B crossfade, loops, a missing track fades out), `stop_music`, `push_music` / `pop_music` / `clear_music_stack`, `duck_music` / `unduck_music`, `current_music`.
+- **Video**: `play_video(name, duck, preview)` / `skip_video` on Media's own CanvasLayer, layer 5 (above the modes, below the service menu). With `preview` (the Audio & Video tab's Play) it's on layer 20, above the menu, and a tap skips it. Theora `.ogv` only.
+- **Library and volume**: `list_sounds/music/videos`, `has_*`, `rescan`, `get_volume/set_volume(bus, 0..1)` (saved in `user://audio.cfg`).
+- **Signals**: `sfx_played`, `music_changed`, `video_started`, `video_finished` (deferred for a missing video).
+
+**Who decides**: modes. Mode screens pick their music (`attract`, `game`).
+- Each input has an optional `sound` (switch editor) (Godot-only, not in the fingerprint) that Game plays on close during a game.
+- Modes override it with `Game.set_switch_sound(name, sound)` (`&""` silences) or reset it with `clear_switch_sounds()`.
+- Game plays `game_start`, `ball_start`, `drain`, `extra_ball` and `game_over` if those files exist.
+
+**Media files are not in git.** The repo is public and some media is licensed. `.gitignore` skips `assets/**` except `assets/README.md` and `assets/**/test/**`, the generated test media (`tools/make_test_sounds.gd`). Never commit licensed media. It syncs PC → Pi with Syncthing (PC send-only, Pi receive-only) or `scp`. See `Docs/audio-video.md`.
 
 ## Coding conventions
 
@@ -219,7 +245,7 @@ It scores from `PinballIO.switch_changed` by each input's kind, and disarms the 
 
 ## Testing
 
-- **Without hardware**: `godot --headless --path . -s res://test/test_config_link.gd` checks MachineConfig validation, the CFG lines built from the default config, and the BoardLink handshake against a fake board. `-s res://test/test_game.gd` checks the Game autoload (scoring by switch kind, drains, abort) with faked `switch_changed` signals. `-s res://test/test_setup_ui.gd` drives the coil wizard and switch editor (always cancels, never writes user://). In `-s` mode, scripts that use autoload names must be `load()`ed at runtime, not preloaded. Tests live in `test/`. If a full `GdSerialManager` stub is ever added there, never ship it alongside the real plugin, because the class names would clash.
+- **Without hardware**: `godot --headless --path . -s res://test/test_config_link.gd` checks MachineConfig validation, the CFG lines built from the default config, and the BoardLink handshake against a fake board. `-s res://test/test_media.gd` checks Media (library, sfx voices, crossfade, push/pop, missing video) and switch sounds, using the generated test media. `-s res://test/test_game.gd` checks the Game autoload (scoring by switch kind, drains, abort) with faked `switch_changed` signals. `-s res://test/test_setup_ui.gd` drives the coil wizard and switch editor (always cancels, never writes user://). In `-s` mode, scripts that use autoload names must be `load()`ed at runtime, not preloaded. Tests live in `test/`. If a full `GdSerialManager` stub is ever added there, never ship it alongside the real plugin, because the class names would clash.
 - **Without Godot**: open the Arduino Serial Monitor (line ending "Newline"), send `HELLO`, `WD OFF`, then `CFG IN ...` / `CFG COIL ...` / `CFG DONE` lines (see the top of `Firmware/pinio/pinio.ino`), then `RULE ALL ON`, `PULSE 0`, `LED 0 BLINK`.
 - **Firmware compile check**: the Arduino IDE bundles `arduino-cli`: `arduino-cli compile --fqbn teensy:avr:teensy41 --warnings all Firmware/pinio`.
 - After changing GDScript, check that the project parses (`godot --headless --path . --quit` should show no script errors).
@@ -232,7 +258,7 @@ It scores from `PinballIO.switch_changed` by each input's kind, and disarms the 
    - ✅ PINIO 0.2 generic firmware with the trigger/EOS/hold coil rule, which covers the real flipper state machine. Compiles; not yet bench-tested on wired pins.
    - ✅ MachineConfig + BoardTypes + BoardLink, and a name-based PinballIO.
    - ✅ Burn layout to board (EEPROM, fingerprints in HELLO).
-   - ✅ Setup tab (P key): coil wizard (kind → name/pin → trigger/EOS, can create switches → power → review + live test → save), switch editor, delete, Burn to board. Edits are drafts (MachineConfig.snapshot/restore) until Save.
+   - ✅ Service menu (P key): Monitor tab (I/O LEDs by pin + log), Hardware tab with the coil wizard (kind → name/pin → trigger/EOS, can create switches → power → review + live test → save), switch editor, delete, Burn to board. Edits are drafts (MachineConfig.snapshot/restore) until Save.
    - Lamps: all lighting will be WS2812B LED chains (FastLED-style) on a few outputs. Not designed yet; the current CFG LAMP/LED on-off stays but has no setup UI.
    - Several boards at once (auto-scan ports, match by uid, machine fault if one drops).
    - Arduino Uno board support (`board_uno.h`).
@@ -241,7 +267,7 @@ It scores from `PinballIO.switch_changed` by each input's kind, and disarms the 
    - ✅ Attract → Start game → 3 balls with score → drain → game over, plus Abort game and switch kinds (target/spinner/drain/start).
    - Next: ball kickout, tilt, ball save, per-state rules, a balls-per-game setting.
 4. Real playfield layout in the machine config.
-5. Audio, video, and a score display in Godot. An 80s-style segment display look is an option, possibly as a hybrid. **Validate cutscene video on real Pi 4 hardware before building out a lot of cutscene content** — see "Target hardware" above.
+5. Audio, video, and a score display in Godot. ✅ Media autoload (sfx, music crossfade/stack, cutscene layer), switch and event sounds, volumes and media players on the Audio & Video tab. Not yet done: Pi cutscene test, callouts/voice. An 80s-style segment display look is an option, possibly as a hybrid. **Validate cutscene video on real Pi 4 hardware before building out a lot of cutscene content** — see "Target hardware" above.
 
 ## Things to avoid
 

@@ -9,3 +9,12 @@ addons/**/bin/**/~*
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# Game media (sounds, music, video) is NOT in this public repo: some of it is
+# licensed and can't be redistributed. It syncs from the PC to the Pi on its
+# own (see Docs/audio-video.md). Only assets/README.md and the test media we
+# generate ourselves (any "test" folder, tools/make_test_sounds.gd) are committed.
+/assets/**
+!/assets/**/
+!/assets/README.md
+!/assets/**/test/**

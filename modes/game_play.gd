@@ -16,6 +16,8 @@ const SHOW_TEST_BUTTONS := true
 ## Point buttons in the right-hand grid (two columns).
 const TEST_POINTS: Array[int] = [10, 50, 100, 500, 1000, 5000, 10000, 50000]
 
+const MUSIC := &"game"   ## assets/music/game.ogg (or .mp3/.wav), if there is one
+
 const TEST_FONT_SIZE := 28
 const TEST_BUTTON_SIZE := Vector2(130, 64)
 const TEST_COLOR := Color(0.75, 0.6, 1.0)   # test buttons look different from real ones
@@ -35,6 +37,7 @@ func _ready() -> void:
 	_on_score_changed(Game.score)
 	_on_ball_started(Game.ball)
 	_on_extra_balls_changed(Game.extra_balls)
+	Media.play_music(MUSIC, 1.5)   # crossfades from the attract music
 	if SHOW_TEST_BUTTONS:
 		_build_test_buttons()
 
