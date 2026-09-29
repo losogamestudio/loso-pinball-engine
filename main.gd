@@ -10,7 +10,9 @@ extends Node
 ##
 ## Mode scenes are swapped with show_mode(). The service page is loaded when
 ## opened and freed when closed, so it costs nothing while the game runs.
-## Press P to toggle it (on the cabinet this will become a coin-door button).
+## Open it with the attract screen's Service button (touch) or the P key;
+## close it with its Exit button or P. On the cabinet a coin-door button will
+## do the same.
 
 ## Keyboard key that opens/closes the service menu. P rather than F1, because
 ## the Raspberry Pi's on-screen keyboard has no function keys.
@@ -59,6 +61,9 @@ func show_mode(scene: PackedScene) -> Node:
 		_mode_host.remove_child(_current_mode)
 		_current_mode.queue_free()
 	_current_mode = scene.instantiate()
+	# A mode can offer a touch-screen Service button by having this signal.
+	if _current_mode.has_signal("service_requested"):
+		_current_mode.connect("service_requested", open_service)
 	_mode_host.add_child(_current_mode)
 	mode_changed.emit(_current_mode)
 	return _current_mode
@@ -79,7 +84,10 @@ func is_service_open() -> bool:
 func open_service() -> void:
 	if is_service_open() or not service_scene:
 		return
-	_service_host.add_child(service_scene.instantiate())
+	var menu := service_scene.instantiate()
+	if menu.has_signal("exit_requested"):   # its touch-screen Exit button
+		menu.connect("exit_requested", close_service)
+	_service_host.add_child(menu)
 	_service_layer.visible = true
 	service_toggled.emit(true)
 

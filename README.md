@@ -63,7 +63,7 @@ res://
 1. Install **Godot 4.4+**, standard build (not .NET) — this project is GDScript only.
 2. Open the project folder in Godot. The GdSerial plugin is already vendored under `addons/gdserial` and enabled in `project.godot`, so there's nothing extra to install there.
 3. Flash `Firmware/pinio/pinio.ino` to a Teensy 4.1 with Arduino IDE + Teensyduino (USB Type: "Serial"). The bench wiring for the default config is in [`Docs/getting-started.md`](Docs/getting-started.md).
-4. Run the project. It opens on an attract-mode placeholder; press **P** to open the diagnostics panel. Pick your Teensy's serial port from the dropdown and hit **Connect**.
+4. Run the project. It opens on an attract-mode placeholder; click **Service** (bottom-right) or press **P** to open the service menu, then the **Diagnostics** tab. Pick your Teensy's serial port from the dropdown and hit **Connect**.
 5. Once linked, check "Auto-connect at startup" if you want it to remember that port and reconnect automatically next time.
 
 Full walkthrough (hardware shopping list, headless testing, what to expect on screen): [`Docs/getting-started.md`](Docs/getting-started.md).

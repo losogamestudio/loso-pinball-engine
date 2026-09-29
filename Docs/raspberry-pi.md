@@ -86,7 +86,7 @@ This is the fastest way to see the project working on real hardware: no export s
    ```
    Your SSH session drops. Wait a minute, then `ssh` back in.
 
-7. **Plug in the Teensy and run the project.** It opens on the attract-mode placeholder; press **P** (the on-screen keyboard works) to open the diagnostics panel:
+7. **Plug in the Teensy and run the project.** It opens on the attract-mode placeholder; touch **Service** (bottom-right) to open the service menu, then the **Diagnostics** tab:
    ```sh
    ~/godot/Godot_v4.6.1-stable_linux.arm64 --path ~/loso-pinball-engine --display-driver wayland --rendering-driver opengl3_es
    ```
@@ -113,7 +113,7 @@ If `git pull` complains about local changes you don't care about, discard them f
 
 ### Small screens
 
-Everything is laid out for 1280×720 and scaled to fit the screen, so it works at any resolution. On a small display, such as the 800×480 bench screen, press **P**, then on the **Setup** tab set **UI scale** to 150% and tick **Fullscreen**. Both are remembered on the Pi. If the screen is smaller than 1280×720, the window also starts maximized automatically.
+Everything is laid out for 1280×720 and scaled to fit the screen, so it works at any resolution. On a small display, such as the 800×480 bench screen, touch **Service**, then on the **Setup** tab set **UI scale** to 150% and tick **Fullscreen**. Both are remembered on the Pi. If the screen is smaller than 1280×720, the window also starts maximized automatically.
 
 ### Desktop icons (skip the typing)
 

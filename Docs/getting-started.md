@@ -50,7 +50,7 @@ The onboard LED (pin 13) is the **status LED**:
 
 ### 4. Run the project
 
-Hit Play (or run it directly — see below). The base scene, `main.tscn`, opens on an attract-mode placeholder. Press **P** to open the [diagnostics panel](diagnostics-panel.md) (P again closes it):
+Hit Play (or run it directly — see below). The base scene, `main.tscn`, opens on an attract-mode placeholder. Click **Service** (bottom-right) or press **P** to open the service menu, then the **Diagnostics** tab ([diagnostics panel](diagnostics-panel.md)); **Exit** closes it:
 
 1. Pick your Teensy's port from the dropdown (it'll show up as something like `COM9` on Windows or `/dev/ttyACM0` on Linux) and hit **Connect**.
 2. Within a second the status goes "Linked on …: PINIO 0.2, sending config…", then "Ready: board 'main' configured". The log shows the `CFG` lines going out and `ACK CFG 3 3 1 <fingerprint>` coming back, and the Teensy's status LED goes solid. Click **Burn layout to board** to store it on the Teensy: from then on it boots configured, and on the next connect Godot sees the fingerprints match and sends nothing.

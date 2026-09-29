@@ -19,7 +19,7 @@ static func button(text: String, on_press: Callable) -> Button:
 static func heading(text: String, size := 20) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_font_size_override("font_size", DisplaySettings.font_size(size))   # grows with Text size
 	return l
 
 

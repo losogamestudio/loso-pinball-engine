@@ -24,6 +24,7 @@ func _ready() -> void:
 
 	_list_scroll = ScrollContainer.new()
 	_list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_list_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
 	add_child(_list_scroll)
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -80,14 +81,28 @@ func _build_screen() -> void:
 	scale_pick.item_selected.connect(func(i: int) -> void: DisplaySettings.set_ui_scale(DisplaySettings.SCALES[i]))
 	row.add_child(scale_pick)
 
+	var text_pick := OptionButton.new()
+	var current_text := DisplaySettings.get_text_scale()
+	for text_scale in DisplaySettings.TEXT_SCALES:
+		text_pick.add_item("Text size %d%%" % roundi(text_scale * 100))
+		if is_equal_approx(text_scale, current_text):
+			text_pick.select(text_pick.item_count - 1)
+	text_pick.item_selected.connect(_on_text_size_picked)
+	row.add_child(text_pick)
+
 	var full := CheckBox.new()
 	full.text = "Fullscreen"
 	full.button_pressed = DisplaySettings.get_fullscreen()
 	full.toggled.connect(DisplaySettings.set_fullscreen)
 	row.add_child(full)
 
-	row.add_child(UiKit.note("Small screens (e.g. 800×480): try 150%."))
 	_list.add_child(row)
+	_list.add_child(UiKit.note("UI scale sizes everything; Text size only the letters. Small screens (e.g. 800×480): UI scale 150%."))
+
+
+func _on_text_size_picked(index: int) -> void:
+	DisplaySettings.set_text_scale(DisplaySettings.TEXT_SCALES[index])
+	_rebuild.call_deferred()   # headings set their own size, so build them again
 
 
 func _build_boards() -> void:
@@ -171,6 +186,8 @@ func _build_footer() -> void:
 	row.add_child(UiKit.note("Machine config: " + ProjectSettings.globalize_path(MachineConfig.loaded_from)))
 	row.add_child(UiKit.button("Reset to default layout", _ask_reset))
 	_list.add_child(row)
+	# On a touch screen with no keyboard, this is the only way out of fullscreen.
+	_list.add_child(UiKit.button("Quit to desktop", _ask_quit))
 
 
 ## One line explaining what a coil does, in plain words.
@@ -259,6 +276,14 @@ func _delete_input(input_name: StringName) -> void:
 func _ask_reset() -> void:
 	_ask("Throw away this machine's saved layout and go back to the project's default layout?",
 			MachineConfig.reset_to_default)
+
+
+func _ask_quit() -> void:
+	_ask("Quit Loso Pinball and go back to the desktop?", _quit)
+
+
+func _quit() -> void:
+	get_tree().quit()
 
 
 func _save_and_apply() -> void:

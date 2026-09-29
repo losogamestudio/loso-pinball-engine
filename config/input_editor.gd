@@ -45,10 +45,16 @@ func _ready() -> void:
 	size_flags_vertical = SIZE_EXPAND_FILL
 	add_child(UiKit.heading("Edit switch '%s'" % _original_name if _original_name != &"" else "Add a switch", 24))
 
+	# Scrolls, so bigger text on a small screen never pushes Save off the bottom.
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	add_child(scroll)
 	_body = VBoxContainer.new()
 	_body.add_theme_constant_override("separation", 12)
-	_body.size_flags_vertical = SIZE_EXPAND_FILL
-	add_child(_body)
+	_body.size_flags_horizontal = SIZE_EXPAND_FILL
+	scroll.add_child(_body)
 
 	_error_label = UiKit.colored("", UiKit.BAD_COLOR)
 	add_child(_error_label)

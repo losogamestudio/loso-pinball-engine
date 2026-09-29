@@ -235,12 +235,21 @@ func _build_ui() -> void:
 		margin.add_theme_constant_override("margin_" + side, 16)
 	add_child(margin)
 
+	# Everything scrolls (bar always shown), so a small screen or big text
+	# never cuts anything off.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	margin.add_child(scroll)
+
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 10)
-	margin.add_child(root)
+	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.add_child(root)
 
-	# Connection row
-	var conn := HBoxContainer.new()
+	# Connection row. HFlowContainer wraps onto a second line when it doesn't fit.
+	var conn := HFlowContainer.new()
 	root.add_child(conn)
 	_port_menu = OptionButton.new()
 	_port_menu.custom_minimum_size.x = 220
@@ -276,7 +285,7 @@ func _build_ui() -> void:
 
 	# Score
 	_score_label = Label.new()
-	_score_label.add_theme_font_size_override("font_size", 36)
+	_score_label.add_theme_font_size_override("font_size", DisplaySettings.font_size(36))
 	root.add_child(_score_label)
 	_add_score(0)
 
@@ -306,6 +315,7 @@ func _build_ui() -> void:
 	_log.bbcode_enabled = true
 	_log.scroll_following = true
 	_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_log.custom_minimum_size.y = 200   # inside a scroll area it needs a real height
 	root.add_child(_log)
 
 
@@ -359,7 +369,7 @@ func _build_io_rows() -> void:
 func _make_heading(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", 18)
+	l.add_theme_font_size_override("font_size", DisplaySettings.font_size(18))
 	return l
 
 

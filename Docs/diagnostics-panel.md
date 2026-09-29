@@ -1,6 +1,6 @@
 # Diagnostics panel
 
-`control.tscn` (built entirely in code by `test_panel.gd`, so there's no scene tree to wire up by hand) is the **Diagnostics** tab of the service menu (`config/service_menu.tscn`), next to the **Setup** tab where coils and switches are configured (see [Machine configuration](configuration.md)). The base scene (`main.tscn`) loads the menu on top of whatever mode is running when you press **P**, and frees it when you press P again. Because it's freed on close, its log and fake score reset each time it opens; the serial links themselves live in `PinballIO` and stay up.
+`control.tscn` (built entirely in code by `test_panel.gd`, so there's no scene tree to wire up by hand) is the **Diagnostics** tab of the service menu (`config/service_menu.tscn`), next to the **Setup** tab where coils and switches are configured (see [Machine configuration](configuration.md)). The base scene (`main.tscn`) loads the menu on top of whatever mode is running when you touch **Service** on the opening screen (or press **P**), and frees it when you touch **Exit** (or press P again). Because it's freed on close, its log and fake score reset each time it opens; the serial links themselves live in `PinballIO` and stay up.
 
 Everything machine-specific on it comes from the [machine config](configuration.md): it shows whichever switches, coils and lamps the config defines, by name. It's meant to keep growing into the permanent diagnostics page for the real machine, next to the config page that's coming in the next build-out step.
 

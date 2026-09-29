@@ -16,7 +16,7 @@ The project is also meant to become a **beginner-friendly reference build** that
 
 The game brain's end home is a **Raspberry Pi 4 or later**, not a desktop PC. The desktop is for development; the Pi is the deployment target for the actual cabinet. Concretely:
 
-- **Screen scaling**: everything is laid out for **1280×720** and stretched to the real screen (`display/window/stretch/mode = canvas_items`, aspect `expand`). A per-machine UI scale (multiplier via `Window.content_scale_factor`) and fullscreen live in `DisplaySettings` (`config/display_settings.gd`, saved in `user://display.cfg`), applied in `main.gd` `_ready` and set from the Setup page. The current bench Pi screen is **800×480**: 150% UI scale is readable there. Don't hard-code layouts wider than ~800 px at 150% (rows must wrap/scroll).
+- **Screen scaling**: everything is laid out for **1280×720** and stretched to the real screen (`display/window/stretch/mode = canvas_items`, aspect `expand`). A per-machine UI scale (multiplier via `Window.content_scale_factor`), a separate **text size** (default 130%, a root-window `Theme.default_font_size`; labels that set their own size must use `DisplaySettings.font_size(base)`), and fullscreen live in `DisplaySettings` (`config/display_settings.gd`, saved in `user://display.cfg`), applied in `main.gd` `_ready` and set from the Setup page. The current bench Pi screen is **800×480**: 150% UI scale is readable there. Don't hard-code layouts wider than ~800 px at 150% (rows must wrap/scroll). Service screens always show a vertical scroll bar (`SCROLL_MODE_SHOW_ALWAYS`).
 - `project.godot` already sets the renderer to **GL Compatibility** (OpenGL ES 3 under the hood). That's deliberate and Pi-appropriate — don't suggest switching to the Forward+ (Vulkan) renderer for this project, since the Pi's GPU doesn't run it well.
 - **Video cutscenes are the one open risk.** Godot 4's built-in `VideoStreamPlayer` only decodes Ogg Theora, entirely in software — there is no hardware-accelerated video path in core Godot on Linux/Pi. That's fine on a desktop but can bog down a Pi 4's CPU at higher resolutions or framerates.
   - Don't assume heavy video cutscenes will just work on the Pi. Before investing real production time in cutscene content, encode a representative test clip and play it back on real Pi 4 hardware to see actual dropped-frame/CPU behavior — don't extrapolate from how it runs on a desktop.
@@ -59,13 +59,13 @@ res://
 ├── board_link.gd             # class BoardLink: one serial link speaking PINIO 0.2 (no GdSerial inside)
 ├── boards/board_types.gd     # class BoardTypes: what each board type's pins can do (mirror of board_<type>.h)
 ├── config/                   # Autoload "MachineConfig", IoDefs records, machine_config.default.json,
-│                             #   and the service menu (P key): service_menu.tscn (Setup + Diagnostics tabs),
+│                             #   and the service menu: service_menu.tscn/.gd (top bar with Exit, Setup + Diagnostics tabs),
 │                             #   setup_page.gd, coil_wizard.gd, input_editor.gd, ui_kit.gd (UiKit helpers),
 │                             #   display_settings.gd (DisplaySettings: UI scale + fullscreen)
 ├── test/                     # headless tests (test_config_link.gd, test_setup_ui.gd)
 ├── tools/pi/                 # Pi helper scripts: run.sh, update.sh (git pull + --import), install-desktop-icons.sh
 ├── main.tscn / main.gd       # Base scene (the main scene): always loaded, hosts modes + service page
-├── modes/                    # Mode scenes swapped into Main's ModeHost (attract.tscn placeholder so far)
+├── modes/                    # Mode scenes swapped into Main's ModeHost (attract.tscn/.gd placeholder with the Service button)
 ├── control.tscn              # Diagnostics panel (root Control + test_panel.gd), the Diagnostics tab of the service menu
 ├── test_panel.gd
 └── Firmware/
@@ -74,7 +74,9 @@ res://
 
 The original files live flat at the project root — that's how the user placed them, so don't move them without asking. New work goes in subfolders (`modes/`, and per the build-out plan `boards/` and `config/`).
 
-**Scene structure**: `main.tscn` is always loaded (like Unreal's persistent level). It has a `ModeHost` node holding exactly one mode scene, swapped with `Main.show_mode(scene)`, and a `ServiceLayer` CanvasLayer on top that loads the service page on open and frees it on close (`open_service()` / `close_service()` / `toggle_service()`, the P key on a keyboard: `Main.SERVICE_KEY`; not F1, the Pi on-screen keyboard has no function keys). Don't use `get_tree().change_scene_to_*()` — that would unload Main.
+**Scene structure**: `main.tscn` is always loaded (like Unreal's persistent level). It has a `ModeHost` node holding exactly one mode scene, swapped with `Main.show_mode(scene)`, and a `ServiceLayer` CanvasLayer on top that loads the service page on open and frees it on close (`open_service()` / `close_service()` / `toggle_service()`). It opens from the attract screen's touch **Service** button (the mode emits `service_requested`; Main connects it for any mode that has that signal) or the P key (`Main.SERVICE_KEY`; not F1, the Pi on-screen keyboard has no function keys). It closes from the menu's **Exit** button (`exit_requested`) or P.
+
+**The UI is touch-first** (Pi touchscreen, no keyboard): every action needs an on-screen button, big enough for a finger (~56 px tall for primary buttons like Service/Exit). Keyboard shortcuts are extras only. Anything that would otherwise need a keyboard (e.g. leaving fullscreen) needs a button, like "Quit to desktop" on the Setup tab. Don't use `get_tree().change_scene_to_*()` — that would unload Main.
 
 If the actual files are somewhere else, update this section. Don't move files the user placed without asking.
 
