@@ -23,6 +23,16 @@ static func heading(text: String, size := 20) -> Label:
 	return l
 
 
+## A big page title that wraps onto more lines instead of pushing the page
+## wider than the screen (big text on a small screen).
+static func title(text: String, size := 24) -> Label:
+	var l := heading(text, size)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.custom_minimum_size.x = 160
+	return l
+
+
 ## A dimmer, wrapping paragraph for explanations.
 static func note(text: String) -> Label:
 	var l := _wrapping_label(text)
@@ -78,6 +88,39 @@ static func field(label_text: String, control: Control) -> HBoxContainer:
 	row.add_child(l)
 	row.add_child(control)
 	return row
+
+
+## How much wider than Godot's default the vertical scroll bar is, so it's
+## easy to grab with a finger on a touch screen.
+const SCROLLBAR_WIDTH_SCALE := 3.0
+
+
+## A vertical scroll area for service screens: the bar is always shown (so
+## it's obvious there's more below) and extra wide for touch. No sideways
+## scrolling: rows wrap instead.
+static func scroll_container() -> ScrollContainer:
+	var s := ScrollContainer.new()
+	s.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	s.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	# The bar's normal width comes from the theme, which only applies once it's
+	# in the scene tree, so widen it on `ready`.
+	s.ready.connect(_widen_scrollbar.bind(s))
+	return s
+
+
+## Widen the bar through its "scroll" (track) style, not custom_minimum_size:
+## the ScrollContainer only makes room for the style's width, so a bigger
+## custom size would just overlap the content. The grabber styles get the same
+## padding so the thumb you drag is wide too.
+static func _widen_scrollbar(s: ScrollContainer) -> void:
+	var bar := s.get_v_scroll_bar()
+	var extra := bar.get_minimum_size().x * (SCROLLBAR_WIDTH_SCALE - 1.0)
+	for style_name: String in ["scroll", "scroll_focus", "grabber", "grabber_highlight", "grabber_pressed"]:
+		var style := bar.get_theme_stylebox(style_name).duplicate() as StyleBox
+		style.content_margin_left = maxf(style.content_margin_left, 0.0) + extra / 2.0
+		style.content_margin_right = maxf(style.content_margin_right, 0.0) + extra / 2.0
+		bar.add_theme_stylebox_override(style_name, style)
+	s.queue_sort()   # lay the content out again around the wider bar
 
 
 ## Remove and free every child now (so a rebuilt list never shows old + new

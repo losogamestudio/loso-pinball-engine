@@ -7,4 +7,5 @@ signal exit_requested   ## the Exit button was pressed
 
 
 func _ready() -> void:
+	theme = DisplaySettings.text_theme()   # the Text size setting, for everything in the menu
 	$TopBar/ExitButton.pressed.connect(exit_requested.emit)

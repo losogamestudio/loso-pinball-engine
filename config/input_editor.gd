@@ -43,13 +43,11 @@ func open(input_name: StringName = &"") -> void:
 func _ready() -> void:
 	add_theme_constant_override("separation", 12)
 	size_flags_vertical = SIZE_EXPAND_FILL
-	add_child(UiKit.heading("Edit switch '%s'" % _original_name if _original_name != &"" else "Add a switch", 24))
+	add_child(UiKit.title("Edit switch '%s'" % _original_name if _original_name != &"" else "Add a switch", 24))
 
 	# Scrolls, so bigger text on a small screen never pushes Save off the bottom.
-	var scroll := ScrollContainer.new()
+	var scroll := UiKit.scroll_container()   # always-on, finger-wide scroll bar
 	scroll.size_flags_vertical = SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
 	add_child(scroll)
 	_body = VBoxContainer.new()
 	_body.add_theme_constant_override("separation", 12)

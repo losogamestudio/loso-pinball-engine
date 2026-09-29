@@ -1,11 +1,13 @@
 class_name DisplaySettings
-## Screen settings for this machine: UI scale and fullscreen.
+## Screen settings for this machine: UI scale, text size and fullscreen.
 ##
 ## The project is laid out for 1280x720 and Godot scales the whole picture to
 ## fit the actual screen (Project Settings > Display > Window > Stretch:
 ## mode "canvas_items", aspect "expand" — like Unreal's DPI scaling). On a small
-## screen that makes text small too, so the UI scale here multiplies on top of
-## it: e.g. 150% on an 800x480 display.
+## screen that makes text small too. Two knobs multiply on top of it:
+##   UI scale  - everything (layout and text) bigger or smaller
+##   Text size - only the letters (200% by default, right for an 800x480 screen
+##               at UI scale 100%)
 ##
 ## Saved per machine in user://display.cfg (not in git), applied at startup by
 ## main.gd and changed live from the Setup page. Static: DisplaySettings.apply_saved().
@@ -15,12 +17,13 @@ const DESIGN_SIZE := Vector2i(1280, 720)   ## keep in sync with display/window/s
 const SCALES: Array[float] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 
 ## Text size is separate from UI scale: it makes letters bigger without
-## changing the layout (column widths, spacing). 130% by default.
-const TEXT_SCALES: Array[float] = [1.0, 1.15, 1.3, 1.45, 1.6]
-const DEFAULT_TEXT_SCALE := 1.3
+## changing the layout (column widths, spacing). 200% by default.
+const TEXT_SCALES: Array[float] = [1.0, 1.3, 1.6, 2.0, 2.4]
+const DEFAULT_TEXT_SCALE := 2.0
 const BASE_FONT_SIZE := 16   ## Godot's default font size, before text scaling
 
 static var _text_scale_cache := 0.0   ## so font_size() doesn't read the file for every label
+static var _text_theme: Theme          ## shared by every screen; see text_theme()
 
 
 ## Apply whatever is saved (called once at startup).
@@ -91,14 +94,23 @@ static func _apply_scale(scale: float) -> void:
 	tree.root.content_scale_factor = scale
 
 
-## Every Control that doesn't set its own font size uses the window's theme
-## default, so one Theme on the root window resizes all normal text at once
-## (including the pop-up lists of dropdowns and dialogs).
+## The Theme that carries the text size. Screens put it on their root Control
+## (`theme = DisplaySettings.text_theme()`); every Control inside that doesn't
+## set its own font size then uses it, including dropdown lists and dialogs.
+## Gotcha: a theme only flows down through Controls and Windows, so setting it
+## on the root window doesn't reach screens under a CanvasLayer (like the
+## service menu). That's why each screen sets it on itself instead.
+## One shared object: changing the text size updates every screen using it.
+static func text_theme() -> Theme:
+	if _text_theme == null:
+		_text_theme = Theme.new()
+		_text_theme.default_font_size = roundi(BASE_FONT_SIZE * get_text_scale())
+	return _text_theme
+
+
+
 static func _apply_text_scale(scale: float) -> void:
-	var tree := Engine.get_main_loop() as SceneTree
-	var theme := Theme.new()
-	theme.default_font_size = roundi(BASE_FONT_SIZE * scale)
-	tree.root.theme = theme
+	text_theme().default_font_size = roundi(BASE_FONT_SIZE * scale)
 
 
 static func _screen_smaller_than_design() -> bool:

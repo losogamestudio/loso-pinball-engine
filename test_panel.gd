@@ -237,9 +237,7 @@ func _build_ui() -> void:
 
 	# Everything scrolls (bar always shown), so a small screen or big text
 	# never cuts anything off.
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	var scroll := UiKit.scroll_container()   # always-on, finger-wide scroll bar
 	margin.add_child(scroll)
 
 	var root := VBoxContainer.new()

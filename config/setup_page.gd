@@ -22,9 +22,7 @@ func _ready() -> void:
 	for side in ["left", "right", "top", "bottom"]:
 		add_theme_constant_override("margin_" + side, 16)
 
-	_list_scroll = ScrollContainer.new()
-	_list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_list_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	_list_scroll = UiKit.scroll_container()   # always-on, finger-wide scroll bar
 	add_child(_list_scroll)
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -97,7 +95,7 @@ func _build_screen() -> void:
 	row.add_child(full)
 
 	_list.add_child(row)
-	_list.add_child(UiKit.note("UI scale sizes everything; Text size only the letters. Small screens (e.g. 800×480): UI scale 150%."))
+	_list.add_child(UiKit.note("UI scale sizes everything; Text size only the letters. Small screens (e.g. 800×480): UI scale 100% with Text size 200%."))
 
 
 func _on_text_size_picked(index: int) -> void:
@@ -138,7 +136,7 @@ func _build_coils() -> void:
 		row.add_theme_constant_override("separation", 12)
 		var title := Label.new()
 		title.text = "%s   (pin %d)" % [c.name, c.pin]
-		title.custom_minimum_size.x = 260
+		title.custom_minimum_size.x = 200
 		row.add_child(title)
 		var about := UiKit.note(_describe_coil(c))
 		about.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -164,7 +162,7 @@ func _build_switches() -> void:
 		row.add_child(lamp)
 		var title := Label.new()
 		title.text = "%s   (pin %d%s)" % [i.name, i.pin, ", NC" if i.nc else ""]
-		title.custom_minimum_size.x = 332
+		title.custom_minimum_size.x = 272
 		row.add_child(title)
 		var users := MachineConfig.coils_using_input(i.name)
 		var about := UiKit.note("used by " + ", ".join(users) if not users.is_empty() else "not used by a coil (game code can still read it)")

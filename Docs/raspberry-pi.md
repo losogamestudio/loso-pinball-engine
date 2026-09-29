@@ -113,7 +113,7 @@ If `git pull` complains about local changes you don't care about, discard them f
 
 ### Small screens
 
-Everything is laid out for 1280×720 and scaled to fit the screen, so it works at any resolution. On a small display, such as the 800×480 bench screen, touch **Service**, then on the **Setup** tab set **UI scale** to 150% and tick **Fullscreen**. Both are remembered on the Pi. If the screen is smaller than 1280×720, the window also starts maximized automatically.
+Everything is laid out for 1280×720 and scaled to fit the screen, so it works at any resolution. On a small display, such as the 800×480 bench screen, touch **Service**, then on the **Setup** tab keep **UI scale** at 100% with **Text size** 200% (the default), and tick **Fullscreen**. Both are remembered on the Pi. If the screen is smaller than 1280×720, the window also starts maximized automatically.
 
 ### Desktop icons (skip the typing)
 

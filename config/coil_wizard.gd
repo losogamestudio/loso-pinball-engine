@@ -95,13 +95,11 @@ func _ready() -> void:
 	add_theme_constant_override("separation", 12)
 	size_flags_vertical = SIZE_EXPAND_FILL
 
-	_title = UiKit.heading("", 24)
+	_title = UiKit.title("", 24)
 	add_child(_title)
 
-	var scroll := ScrollContainer.new()
+	var scroll := UiKit.scroll_container()   # always-on, finger-wide scroll bar
 	scroll.size_flags_vertical = SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
 	add_child(scroll)
 	_body = VBoxContainer.new()
 	_body.size_flags_horizontal = SIZE_EXPAND_FILL
