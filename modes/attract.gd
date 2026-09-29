@@ -1,12 +1,17 @@
 extends Control
-## Attract mode (placeholder for now): the screen shown while no game is running.
+## Attract mode: the screen shown while no game is running.
 ##
-## Mode scenes don't reach up into Main; they emit signals and Main decides
-## ("call down, signal up"). Main connects `service_requested` for any mode
-## that has it.
+## Start game (touch) starts a game through the Game autoload, the same as a
+## switch of kind "start" (the cabinet button, once it's wired). Main then
+## swaps in the game screen. Mode scenes don't reach up into Main; they emit
+## signals and Main decides ("call down, signal up"). Main connects
+## `service_requested` for any mode that has it.
 
 signal service_requested   ## the touch-screen Service button was pressed
 
 
 func _ready() -> void:
 	$ServiceButton.pressed.connect(service_requested.emit)
+	$StartButton.pressed.connect(Game.start_game)
+	# After a game, show how it went. ball is 0 until the first game.
+	$LastScore.text = "Last score: %s" % Game.format_score(Game.score) if Game.ball > 0 else ""

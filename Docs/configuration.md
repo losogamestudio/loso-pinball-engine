@@ -14,7 +14,7 @@ Touch **Service** (bottom-right of the opening screen) or press **P**, and open 
 4. **Power**: full-power ms, hold %, recycle ms, each with an explanation.
 5. **Review and test**: the draft is sent to the board straight away. **Fire once**, **Hold for 1 second** and **Arm the rule, then press the real switch** let you try it for real, and the trigger/EOS lamps show the switches live. Nothing is written to disk until **Save**. **Cancel** (or closing the menu with P) puts the board and the layout back as they were.
 
-**+ Add switch** / **Edit** on a switch opens a one-page editor for its name, pin, NO/NC and debounce, with **Send to board to test** and a live lamp. Renaming a switch also renames it in every coil that uses it. A switch a coil still uses can't be deleted.
+**+ Add switch** / **Edit** on a switch opens a one-page editor for its name, pin, NO/NC, debounce and **kind** (see below), with **Send to board to test** and a live lamp. Renaming a switch also renames it in every coil that uses it. A switch a coil still uses can't be deleted.
 
 After saving, press **Burn to board** so the Teensy keeps the layout at power-off.
 
@@ -42,9 +42,9 @@ The diagnostics panel (P key) shows which file was loaded, and lists any problem
     { "id": "main", "type": "TEENSY41", "uid": "", "pwm_hz": 20000 }
   ],
   "inputs": [
-    { "name": "flipper_left_button", "board": "main", "pin": 33, "nc": false, "debounce_ms": 5 },
-    { "name": "flipper_left_eos",    "board": "main", "pin": 34, "nc": false, "debounce_ms": 2 },
-    { "name": "sling_left_switch",   "board": "main", "pin": 35, "nc": false, "debounce_ms": 5 }
+    { "name": "flipper_left_button", "board": "main", "pin": 33, "nc": false, "debounce_ms": 5, "kind": "switch", "points": 0 },
+    { "name": "flipper_left_eos",    "board": "main", "pin": 34, "nc": false, "debounce_ms": 2, "kind": "switch", "points": 0 },
+    { "name": "sling_left_switch",   "board": "main", "pin": 35, "nc": false, "debounce_ms": 5, "kind": "target", "points": 10 }
   ],
   "coils": [
     { "name": "flipper_left", "board": "main", "pin": 2,  "full_ms": 60, "hold_pct": 50,
@@ -77,6 +77,18 @@ The diagnostics panel (P key) shows which file was loaded, and lists any problem
 | `pin` | Must be an input pin on that board type. On a Teensy 4.1: 14–17, 20–23, 33–41. |
 | `nc` | `true` for a normally-closed switch (active when it *opens*, like many EOS switches). |
 | `debounce_ms` | 0–100. How long the switch must be stable before it counts. |
+| `kind` | What the switch means to the game (see below). Missing = `switch`. |
+| `points` | For `target`/`spinner`: points per close, 0–1,000,000. |
+
+**Switch kinds** are used only by Godot's `Game` autoload. The board never sees them, so changing a kind or its points doesn't change the layout fingerprint or need a burn.
+
+| Kind | What it does |
+|---|---|
+| `switch` | Plain switch: flipper buttons, EOS, anything game code reads by name. Scores nothing. |
+| `target` | Point target: adds `points` every time it closes (the editor suggests 500). |
+| `spinner` | Spinner: adds `points` every close, once per spin (suggests 100 and 1 ms debounce, because spinners are fast). |
+| `drain` | The outhole/trough switch: ends the current ball. |
+| `start` | The cabinet Start button: starts a game from the attract screen, same as the touch **Start game** button. |
 
 ### coils
 

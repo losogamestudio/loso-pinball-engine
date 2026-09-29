@@ -27,6 +27,31 @@ class BoardDef:
 		return b
 
 
+## What a switch means to the game (Godot only; the board never sees this,
+## so changing it doesn't change the layout fingerprint).
+const KIND_SWITCH := "switch"     ## plain: flipper buttons, EOS, anything read by name
+const KIND_TARGET := "target"     ## scores its points every time it closes
+const KIND_SPINNER := "spinner"   ## scores its points every close (once per spin)
+const KIND_DRAIN := "drain"       ## outhole/trough: ends the current ball
+const KIND_START := "start"       ## cabinet Start button: starts a game
+const KINDS: Array[String] = [KIND_SWITCH, KIND_TARGET, KIND_SPINNER, KIND_DRAIN, KIND_START]
+const KIND_LABELS := {
+	KIND_SWITCH: "Plain switch",
+	KIND_TARGET: "Point target",
+	KIND_SPINNER: "Spinner",
+	KIND_DRAIN: "Drain (ends the ball)",
+	KIND_START: "Start button",
+}
+## Suggested points and debounce when a switch is given a scoring kind.
+const KIND_DEFAULT_POINTS := {KIND_TARGET: 500, KIND_SPINNER: 100}
+const KIND_DEFAULT_DEBOUNCE_MS := {KIND_TARGET: 5, KIND_SPINNER: 1}
+
+
+## True for kinds that add points when they close.
+static func kind_scores(kind: String) -> bool:
+	return kind == KIND_TARGET or kind == KIND_SPINNER
+
+
 ## One switch input.
 class InputDef:
 	var name: StringName             ## what game code calls it, e.g. &"flipper_left_button"
@@ -34,10 +59,12 @@ class InputDef:
 	var pin: int = -1
 	var nc: bool = false             ## normally closed: active when the switch OPENS
 	var debounce_ms: int = 5
+	var kind: String = "switch"      ## one of IoDefs.KINDS (Godot only)
+	var points: int = 0              ## for target/spinner: points per close
 
 	func to_dict() -> Dictionary:
 		return {"name": String(name), "board": String(board), "pin": pin,
-				"nc": nc, "debounce_ms": debounce_ms}
+				"nc": nc, "debounce_ms": debounce_ms, "kind": kind, "points": points}
 
 	static func from_dict(d: Dictionary) -> InputDef:
 		var i := InputDef.new()
@@ -46,6 +73,8 @@ class InputDef:
 		i.pin = int(d.get("pin", -1))
 		i.nc = bool(d.get("nc", false))
 		i.debounce_ms = int(d.get("debounce_ms", 5))
+		i.kind = str(d.get("kind", "switch"))   # older config files have no kind
+		i.points = int(d.get("points", 0))
 		return i
 
 

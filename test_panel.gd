@@ -8,8 +8,8 @@ extends Control
 ## per switch, a button per coil (plus a rule toggle for coils with a trigger),
 ## a mode button per lamp, ping, and a log of every line in and out.
 
-const LAMP_OFF := Color(0.18, 0.18, 0.2)
-const LAMP_ON := Color(1.0, 0.75, 0.1)
+const LAMP_OFF := UiKit.LAMP_OFF
+const LAMP_ON := UiKit.LAMP_ON
 const HB_LAMP_ON := Color(0.35, 1.0, 0.45)
 const HB_FADE_SEC := 0.4                 ## boards send HB once/sec; fade fully before the next one
 const LOG_MAX_LINES := 300
@@ -241,80 +241,84 @@ func _build_ui() -> void:
 	margin.add_child(scroll)
 
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 10)
+	root.add_theme_constant_override("separation", 12)
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(root)
 
-	# Connection row. HFlowContainer wraps onto a second line when it doesn't fit.
-	var conn := HFlowContainer.new()
-	root.add_child(conn)
+	# Connection. HFlowContainer wraps onto a second line when it doesn't fit.
+	var connection := UiKit.section(root, "Connection")
+	var conn := _flow()
+	connection.add_child(conn)
 	_port_menu = OptionButton.new()
 	_port_menu.custom_minimum_size.x = 220
 	conn.add_child(_port_menu)
-	conn.add_child(_make_button("Refresh", _refresh_ports))
-	conn.add_child(_make_button("Connect", _on_connect_pressed))
-	conn.add_child(_make_button("Disconnect all", func() -> void: PinballIO.close_port()))
+	conn.add_child(UiKit.button("Refresh", _refresh_ports))
+	conn.add_child(UiKit.button("Connect", _on_connect_pressed, UiKit.PRIMARY))
+	conn.add_child(UiKit.button("Disconnect all", func() -> void: PinballIO.close_port()))
 	_auto_connect_toggle = CheckButton.new()
 	_auto_connect_toggle.text = "Auto-connect at startup"
 	_auto_connect_toggle.button_pressed = PinballIO.auto_connect
 	_auto_connect_toggle.toggled.connect(func(on: bool) -> void: PinballIO.set_auto_connect(on))
 	conn.add_child(_auto_connect_toggle)
-	_status = Label.new()
-	conn.add_child(_status)
-	_set_status("Not connected", Color.SALMON)
 
+	var status_row := _flow()
+	connection.add_child(status_row)
+	_status = Label.new()
+	status_row.add_child(_status)
+	_set_status("Not connected", Color.SALMON)
 	# Heartbeat: pulses once a second on the board's HB line, so a frozen
 	# board (or a link that's technically "linked" but gone quiet) is obvious.
 	var hb_box := HBoxContainer.new()
 	hb_box.add_theme_constant_override("separation", 6)
-	conn.add_child(hb_box)
+	status_row.add_child(hb_box)
 	var hb_label := Label.new()
 	hb_label.text = "Board HB"
 	hb_box.add_child(hb_label)
 	_heartbeat_lamp = ColorRect.new()
 	_heartbeat_lamp.custom_minimum_size = Vector2(18, 18)
+	_heartbeat_lamp.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_heartbeat_lamp.color = LAMP_OFF
 	hb_box.add_child(_heartbeat_lamp)
-
-	_config_label = Label.new()
-	_config_label.modulate = Color(1, 1, 1, 0.7)
-	root.add_child(_config_label)
-
-	# Score
-	_score_label = Label.new()
-	_score_label.add_theme_font_size_override("font_size", DisplaySettings.font_size(36))
-	root.add_child(_score_label)
-	_add_score(0)
+	_config_label = UiKit.detail("")
+	connection.add_child(_config_label)
 
 	# Machine I/O rows, filled from MachineConfig by _build_io_rows().
 	# HFlowContainer wraps onto more lines when there are lots of items.
-	root.add_child(_make_heading("Switches"))
-	_switch_row = HFlowContainer.new()
-	root.add_child(_switch_row)
+	var switches := UiKit.section(root, "Switches")
+	_switch_row = _flow()
+	switches.add_child(_switch_row)
+	_score_label = Label.new()
+	_score_label.add_theme_font_size_override("font_size", DisplaySettings.font_size(20))
+	switches.add_child(_score_label)
+	_add_score(0)
 
-	root.add_child(_make_heading("Coils  (← / → pulse the first two)"))
-	_coil_row = HFlowContainer.new()
-	root.add_child(_coil_row)
+	var coils := UiKit.section(root, "Coils")
+	coils.add_child(UiKit.detail("← / → keys pulse the first two."))
+	_coil_row = _flow()
+	coils.add_child(_coil_row)
 
-	root.add_child(_make_heading("Lamps"))
-	_lamp_row = HFlowContainer.new()
-	root.add_child(_lamp_row)
+	var lamps := UiKit.section(root, "Lamps")
+	_lamp_row = _flow()
+	lamps.add_child(_lamp_row)
 
-	var tools := HBoxContainer.new()
-	root.add_child(tools)
-	tools.add_child(_make_button("Arm all rules", _set_all_rules.bind(true)))
-	tools.add_child(_make_button("Disarm all rules", _set_all_rules.bind(false)))
-	tools.add_child(_make_button("Ping", PinballIO.ping))
-	tools.add_child(_make_button("Burn layout to board", _burn_all_boards))
+	var tools := UiKit.section(root, "Tools")
+	var tool_row := _flow()
+	tools.add_child(tool_row)
+	tool_row.add_child(UiKit.button("Arm all rules", _set_all_rules.bind(true), UiKit.TEST))
+	tool_row.add_child(UiKit.button("Disarm all rules", _set_all_rules.bind(false)))
+	tool_row.add_child(UiKit.button("Ping", PinballIO.ping))
+	tool_row.add_child(UiKit.button("Burn layout to board", _burn_all_boards, UiKit.PRIMARY))
 
 	# Log
+	var log_section := UiKit.section(root, "Log")
 	_log = RichTextLabel.new()
 	_log.bbcode_enabled = true
 	_log.scroll_following = true
 	_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_log.custom_minimum_size.y = 200   # inside a scroll area it needs a real height
-	root.add_child(_log)
+	_log.add_theme_font_size_override("normal_font_size", DisplaySettings.font_size(UiKit.NOTE_SIZE))
+	log_section.add_child(_log)
 
 
 ## (Re)build the switch / coil / lamp rows from the current machine config.
@@ -325,37 +329,41 @@ func _build_io_rows() -> void:
 	_switch_lamps.clear()
 
 	var problems: PackedStringArray = MachineConfig.validate()
-	_config_label.text = "Config: %s  —  %d switches, %d coils, %d lamps%s" % [
+	_config_label.text = "Config: %s · %d switches, %d coils, %d lamps%s" % [
 		MachineConfig.loaded_from, MachineConfig.inputs.size(), MachineConfig.coils.size(),
-		MachineConfig.lamps.size(), "" if problems.is_empty() else "  —  %d PROBLEM(S), see log" % problems.size()]
+		MachineConfig.lamps.size(), "" if problems.is_empty() else " · %d PROBLEM(S), see log" % problems.size()]
 	for problem in problems:
 		_log_line("[color=salmon]config: %s[/color]" % problem)
 
 	for input in MachineConfig.inputs:
+		var card := UiKit.row_card(_switch_row)
 		var box := VBoxContainer.new()
+		card.add_child(box)
 		var lamp := ColorRect.new()
-		lamp.custom_minimum_size = Vector2(56, 40)
+		lamp.custom_minimum_size = Vector2(56, 32)
 		lamp.color = LAMP_ON if PinballIO.is_switch_active(input.name) else LAMP_OFF
-		var label := Label.new()
-		label.text = "%s\npin %d" % [input.name, input.pin]
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		box.add_child(lamp)
+		var label := UiKit.detail("%s\npin %d" % [input.name, input.pin])
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		label.custom_minimum_size.x = 0
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		box.add_child(label)
-		_switch_row.add_child(box)
 		_switch_lamps[input.name] = lamp
 
 	for coil in MachineConfig.coils:
+		var card := UiKit.row_card(_coil_row)
 		var box := VBoxContainer.new()
+		card.add_child(box)
 		var coil_name := coil.name   # captured by the lambdas below
-		box.add_child(_make_button("Pulse %s (pin %d)" % [coil_name, coil.pin],
-				func() -> void: PinballIO.pulse_coil(coil_name)))
+		box.add_child(UiKit.button("Pulse %s (pin %d)" % [coil_name, coil.pin],
+				func() -> void: PinballIO.pulse_coil(coil_name), UiKit.TEST))
 		if coil.trigger != &"":
 			var rule := CheckButton.new()
-			rule.text = "Rule: %s → %s" % [coil.trigger, coil_name]
+			rule.text = "Rule from %s" % coil.trigger
+			rule.add_theme_font_size_override("font_size", DisplaySettings.font_size(UiKit.DETAIL_SIZE))
 			rule.button_pressed = PinballIO.get_coil_rule(coil_name)
 			rule.toggled.connect(func(on: bool) -> void: PinballIO.set_coil_rule(coil_name, on))
 			box.add_child(rule)
-		_coil_row.add_child(box)
 
 	for lamp_def in MachineConfig.lamps:
 		var b := Button.new()
@@ -364,15 +372,9 @@ func _build_io_rows() -> void:
 		_lamp_row.add_child(b)
 
 
-func _make_heading(text: String) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", DisplaySettings.font_size(18))
-	return l
-
-
-func _make_button(text: String, on_press: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.pressed.connect(on_press)
-	return b
+## A row of items that wraps onto more lines when it doesn't fit.
+func _flow() -> HFlowContainer:
+	var f := HFlowContainer.new()
+	f.add_theme_constant_override("h_separation", 10)
+	f.add_theme_constant_override("v_separation", 8)
+	return f

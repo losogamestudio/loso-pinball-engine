@@ -105,6 +105,7 @@ static func text_theme() -> Theme:
 	if _text_theme == null:
 		_text_theme = Theme.new()
 		_text_theme.default_font_size = roundi(BASE_FONT_SIZE * get_text_scale())
+		UiKit.style_theme(_text_theme)   # gray buttons, fields and cards
 	return _text_theme
 
 

@@ -28,6 +28,10 @@ So: **Teensy 4.x** for problem 1, **Godot 4 (GDScript)** for problem 2, talking 
 - **Scoring, modes, ball tracking, audio, video, and the UI.** All the parts of a pinball game that are really a game-engine problem, not a real-time-control problem.
 - **One-off output commands that aren't time-critical in the same way**: firing a kickout coil to launch a ball, resetting drop targets, setting lamp/LED state. These go out as explicit serial commands (`PULSE`, `LED`, ...) whenever Godot's game logic decides they should happen.
 
+## Game flow
+
+The `Game` autoload (`game/game.gd`) runs a game: **Start game** (touch, or a switch of kind `start`) arms every coil rule, sets ball 1 of 3 and zeroes the score. Switches of kind `target`/`spinner` add their points, a `drain` switch (or the **Drain ball** test button) moves to the next ball, or replays the same ball if an extra ball is waiting, and after the last ball, or **Abort game**, the rules are disarmed and the game ends. `Main` listens to `Game.game_started`/`game_ended` and swaps the attract screen and the game screen (`modes/game_play.tscn`). Game events that need an output (a ball kickout, a drop target reset) will be direct `pulse_coil`/`hold_coil`/`set_lamp` commands from game logic.
+
 ## Data flow, end to end
 
 ```

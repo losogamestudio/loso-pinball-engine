@@ -101,10 +101,14 @@ func _ready() -> void:
 	var scroll := UiKit.scroll_container()   # always-on, finger-wide scroll bar
 	scroll.size_flags_vertical = SIZE_EXPAND_FILL
 	add_child(scroll)
+	var card := PanelContainer.new()   # gray section card, like the Setup list
+	card.theme_type_variation = &"SectionPanel"
+	card.size_flags_horizontal = SIZE_EXPAND_FILL
+	scroll.add_child(card)
 	_body = VBoxContainer.new()
 	_body.size_flags_horizontal = SIZE_EXPAND_FILL
 	_body.add_theme_constant_override("separation", 12)
-	scroll.add_child(_body)
+	card.add_child(_body)
 
 	_error_label = UiKit.colored("", UiKit.BAD_COLOR)
 	add_child(_error_label)
@@ -117,7 +121,7 @@ func _ready() -> void:
 	footer.add_child(spacer)
 	_back_button = UiKit.button("◀ Back", _go_back)
 	footer.add_child(_back_button)
-	_next_button = UiKit.button("Next ▶", _go_next)
+	_next_button = UiKit.button("Next ▶", _go_next, UiKit.PRIMARY)
 	footer.add_child(_next_button)
 
 	PinballIO.switch_changed.connect(_on_switch_changed)
@@ -466,9 +470,9 @@ func _build_review_page() -> void:
 	var tests := HBoxContainer.new()
 	tests.add_theme_constant_override("separation", 12)
 	_body.add_child(tests)
-	tests.add_child(UiKit.button("Fire once", _test_fire))
+	tests.add_child(UiKit.button("Fire once", _test_fire, UiKit.TEST))
 	if coil.hold_pct > 0:
-		tests.add_child(UiKit.button("Hold for 1 second", _test_hold))
+		tests.add_child(UiKit.button("Hold for 1 second", _test_hold, UiKit.TEST))
 	if coil.trigger != &"":
 		var arm := CheckButton.new()
 		arm.text = "Arm the rule, then press the real switch"

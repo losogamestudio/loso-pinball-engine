@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 
 MachineConfig="*res://config/machine_config.gd"
 PinballIO="*res://pinball_io.gd"
+Game="*res://game/game.gd"
 
 [display]
 

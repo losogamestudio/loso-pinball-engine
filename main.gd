@@ -21,8 +21,10 @@ const SERVICE_KEY := KEY_P
 signal mode_changed(mode: Node)          ## a new mode scene is now running
 signal service_toggled(is_open: bool)    ## service page opened or closed
 
-## Scene shown in ModeHost at startup.
+## Scene shown in ModeHost at startup and between games (attract).
 @export var start_mode: PackedScene
+## Scene shown in ModeHost while a game is running.
+@export var game_scene: PackedScene
 ## Scene shown in the ServiceLayer when service is opened.
 @export var service_scene: PackedScene
 
@@ -36,6 +38,9 @@ var _current_mode: Node
 func _ready() -> void:
 	DisplaySettings.apply_saved()   # UI scale + fullscreen for this machine's screen
 	_service_layer.visible = false
+	# The Game autoload says when a game starts and ends; Main picks the screen.
+	Game.game_started.connect(_on_game_started)
+	Game.game_ended.connect(_on_game_ended)
 	if start_mode:
 		show_mode(start_mode)
 
@@ -72,6 +77,16 @@ func show_mode(scene: PackedScene) -> Node:
 ## The mode scene currently running, or null.
 func get_current_mode() -> Node:
 	return _current_mode
+
+
+func _on_game_started() -> void:
+	if game_scene:
+		show_mode(game_scene)
+
+
+func _on_game_ended(_aborted: bool) -> void:
+	if start_mode:
+		show_mode(start_mode)
 
 
 # ---------------------------------------------------------------- service page

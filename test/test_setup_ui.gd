@@ -36,6 +36,7 @@ func _run() -> void:
 	await _test_add_flipper_with_new_switches()
 	await _test_name_and_pin_rules()
 	await _test_rename_switch_follows_coils()
+	await _test_switch_kind()
 
 	_config.restore(saved_layout, false)
 	print("\n%s" % ("ALL PASSED" if _failures == 0 else "%d FAILURE(S)" % _failures))
@@ -192,5 +193,30 @@ func _test_rename_switch_follows_coils() -> void:
 	await _frames()
 	_check((_config.find_coil(&"sling_left") as IoDefs.CoilDef).trigger == &"sling_left_switch",
 			"Cancel restores the old switch name")
+	editor.queue_free()
+	await _frames()
+
+
+func _test_switch_kind() -> void:
+	var before: String = _config.build_plan(_config.boards[0]).fingerprint
+	var editor: Control = InputEditorScript.new()
+	editor.open(&"flipper_left_eos")
+	root.add_child(editor)
+	await _frames()
+	editor._on_kind_picked(IoDefs.KINDS.find(IoDefs.KIND_SPINNER))
+	_check(editor._draft.kind == "spinner" and editor._draft.points == 100 and editor._draft.debounce_ms == 1,
+			"picking Spinner suggests 100 points and 1 ms debounce")
+	_check(_all_text(editor).contains("Points"), "a scoring kind shows the Points field")
+	editor._on_kind_picked(IoDefs.KINDS.find(IoDefs.KIND_DRAIN))
+	editor._draft.debounce_ms = 2   # back to the original, so only the kind differs
+	editor._try_on_board()
+	await _frames()
+	var input: IoDefs.InputDef = _config.find_input(&"flipper_left_eos")
+	_check(input.kind == "drain" and input.points == 0, "kind is stored on the switch (drain, 0 points)")
+	_check(_config.build_plan(_config.boards[0]).fingerprint == before,
+			"kind and points don't change the board layout fingerprint")
+	editor._cancel()
+	await _frames()
+	_check((_config.find_input(&"flipper_left_eos") as IoDefs.InputDef).kind == "switch", "Cancel restores the kind")
 	editor.queue_free()
 	await _frames()

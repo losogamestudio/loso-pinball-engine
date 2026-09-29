@@ -49,10 +49,14 @@ func _ready() -> void:
 	var scroll := UiKit.scroll_container()   # always-on, finger-wide scroll bar
 	scroll.size_flags_vertical = SIZE_EXPAND_FILL
 	add_child(scroll)
+	var card := PanelContainer.new()   # gray section card, like the Setup list
+	card.theme_type_variation = &"SectionPanel"
+	card.size_flags_horizontal = SIZE_EXPAND_FILL
+	scroll.add_child(card)
 	_body = VBoxContainer.new()
 	_body.add_theme_constant_override("separation", 12)
 	_body.size_flags_horizontal = SIZE_EXPAND_FILL
-	scroll.add_child(_body)
+	card.add_child(_body)
 
 	_error_label = UiKit.colored("", UiKit.BAD_COLOR)
 	add_child(_error_label)
@@ -63,8 +67,8 @@ func _ready() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = SIZE_EXPAND_FILL
 	footer.add_child(spacer)
-	footer.add_child(UiKit.button("Send to board to test", _try_on_board))
-	_save_button = UiKit.button("Save", _save)
+	footer.add_child(UiKit.button("Send to board to test", _try_on_board, UiKit.TEST))
+	_save_button = UiKit.button("Save", _save, UiKit.PRIMARY)
 	footer.add_child(_save_button)
 
 	PinballIO.switch_changed.connect(_on_switch_changed)
@@ -123,6 +127,20 @@ func _build() -> void:
 	_body.add_child(UiKit.field("Debounce", UiKit.spin(0, MachineConfig.MAX_DEBOUNCE_MS, _draft.debounce_ms, " ms",
 			func(v: float) -> void: _draft.debounce_ms = int(v))))
 
+	var kind_pick := OptionButton.new()
+	for n in IoDefs.KINDS.size():
+		kind_pick.add_item(IoDefs.KIND_LABELS[IoDefs.KINDS[n]], n)
+		if IoDefs.KINDS[n] == _draft.kind:
+			kind_pick.select(n)
+	kind_pick.item_selected.connect(_on_kind_picked)
+	_body.add_child(UiKit.field("Kind (for the game)", kind_pick))
+	if IoDefs.kind_scores(_draft.kind):
+		var points := UiKit.spin(0, MachineConfig.MAX_POINTS, _draft.points, " pts",
+				func(v: float) -> void: _draft.points = int(v))
+		points.custom_minimum_size.x = 240   # room for 7 digits at big text sizes
+		_body.add_child(UiKit.field("Points per hit", points))
+	_body.add_child(UiKit.note("Plain switch: flipper buttons, EOS and anything game code reads by name. Point target: scores its points every time it closes. Spinner: scores every close, once per spin (use 1 ms debounce). Drain: the outhole switch, ends the ball. Start button: starts a game from the attract screen."))
+
 	var users := MachineConfig.coils_using_input(_original_name) if _original_name != &"" else PackedStringArray()
 	_body.add_child(UiKit.field("Used by", UiKit.note(", ".join(users) if not users.is_empty() else "nothing yet (pick it as a trigger or EOS in a coil's setup)")))
 
@@ -141,6 +159,19 @@ func _on_name_changed(text: String) -> void:
 
 func _on_pin_picked(index: int, picker: OptionButton) -> void:
 	_draft.pin = picker.get_item_id(index)
+
+
+## New kind: rebuild (Points only shows for scoring kinds). Picking a target or
+## spinner fills in suggested points and debounce, unless points were already set.
+func _on_kind_picked(index: int) -> void:
+	_draft.kind = IoDefs.KINDS[index]
+	if IoDefs.kind_scores(_draft.kind):
+		if _draft.points == 0:
+			_draft.points = IoDefs.KIND_DEFAULT_POINTS[_draft.kind]
+			_draft.debounce_ms = IoDefs.KIND_DEFAULT_DEBOUNCE_MS[_draft.kind]
+	else:
+		_draft.points = 0
+	_build()
 
 
 func _on_board_picked(index: int, picker: OptionButton) -> void:

@@ -24,6 +24,9 @@ const MAX_DEBOUNCE_MS := 100
 const MIN_PWM_HZ := 100
 const MAX_PWM_HZ := 100000
 
+## Game-side limit (not the firmware's): most points one switch can score per close.
+const MAX_POINTS := 1000000
+
 var boards: Array[IoDefs.BoardDef] = []
 var inputs: Array[IoDefs.InputDef] = []
 var coils: Array[IoDefs.CoilDef] = []
@@ -244,6 +247,10 @@ func validate() -> PackedStringArray:
 			_check_pin(b, i.pin, BoardTypes.CAP_IN, i.name, used_pins, errors)
 		if i.debounce_ms < 0 or i.debounce_ms > MAX_DEBOUNCE_MS:
 			errors.append("input '%s' debounce must be 0..%d ms" % [i.name, MAX_DEBOUNCE_MS])
+		if not IoDefs.KINDS.has(i.kind):
+			errors.append("input '%s' has unknown kind '%s'" % [i.name, i.kind])
+		if i.points < 0 or i.points > MAX_POINTS:
+			errors.append("input '%s' points must be 0..%d" % [i.name, MAX_POINTS])
 
 	for c in coils:
 		_check_name(c.name, "coil", names, errors)

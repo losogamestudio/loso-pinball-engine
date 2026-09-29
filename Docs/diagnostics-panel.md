@@ -37,7 +37,7 @@ One lamp per input in the config, labeled with its name and pin, lit amber while
 For each coil in the config:
 
 - **Pulse <name> (pin N)**: sends `PULSE` for the coil's own `full_ms`. The **Left/Right arrow keys** pulse the first and second coil in the config. There's no keyboard on the real cabinet, so this only exists as a quick way to bench-test from a desktop. It ignores key-repeat and calls `accept_event()`, so holding a key doesn't spam pulses or move UI focus.
-- **Rule: <trigger> → <coil>** (only for coils with a trigger input): arms or disarms that coil's rule on the board (`RULE <n> ON/OFF`). It never fires the coil directly; see [Architecture](architecture.md) for why that distinction matters. With the flipper rule armed, holding its button makes the board fire, drop to hold on EOS, and release, all by itself.
+- **Rule from <trigger>** (under the coil's Pulse button, only for coils with a trigger input): arms or disarms that coil's rule on the board (`RULE <n> ON/OFF`). It never fires the coil directly; see [Architecture](architecture.md) for why that distinction matters. With the flipper rule armed, holding its button makes the board fire, drop to hold on EOS, and release, all by itself.
 
 **Arm all rules / Disarm all rules** do every coil with a trigger at once. **Ping** measures round-trip time to every linked board.
 
