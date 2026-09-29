@@ -69,7 +69,7 @@ This is the fastest way to see the project working on real hardware: no export s
    ```
    If `wget` returns a 404, the version number is wrong — the [releases page](https://github.com/godotengine/godot/releases) lists the exact filenames. No export templates are needed for this path.
 
-5. **Import the project once.** The `.godot/` import cache isn't in git, so a fresh clone has none. Let Godot build it before the first real run:
+5. **Import the project** (now, and again after every `git pull`; see "Updating later"). The `.godot/` import cache isn't in git, so a fresh clone has none. Let Godot build it before the first real run:
    ```sh
    ~/godot/Godot_v4.6.1-stable_linux.arm64 --headless --import --path ~/loso-pinball-engine
    ```
@@ -98,11 +98,16 @@ The GdSerial plugin already has a `linux-arm64` binary in the repo (`addons/gdse
 
 ### Updating later
 
-After pushing changes from your desktop, pull them on the Pi:
+After pushing changes from your desktop, pull them on the Pi **and re-run the import** (step 5):
 
 ```sh
 cd ~/loso-pinball-engine && git pull
 ```
+```sh
+~/godot/Godot_v4.6.1-stable_linux.arm64 --headless --import --path ~/loso-pinball-engine
+```
+
+Don't skip the import. Scripts that declare a `class_name` (like `IoDefs` or `BoardLink`) are global type names, and Godot keeps the list of them in the `.godot/` cache folder, which isn't in git. On the desktop the editor updates that list for you, but on the Pi nothing does. Skip the import after a pull that adds scripts and you get a wall of `Could not find type "IoDefs"` / `Identifier "BoardTypes" not declared` errors, which the import fixes.
 
 If `git pull` complains about local changes you don't care about, discard them first with `git checkout -- .`.
 
