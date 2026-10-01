@@ -11,6 +11,7 @@ const TEST_MUSIC_B := &"test_loop_b"
 var _list: VBoxContainer
 var _music_pick: OptionButton
 var _video_pick: OptionButton
+var _show_pick: OptionButton
 
 
 func _ready() -> void:
@@ -149,13 +150,50 @@ func _build_media() -> void:
 	body.add_child(video_row)
 	body.add_child(UiKit.detail("A video plays full screen on top of this menu; tap it to stop early. Try a real clip on the Pi before making lots of cutscenes (Docs/audio-video.md)."))
 
-	body.add_child(UiKit.detail("%d sounds, %d songs, %d videos in %s. Media isn't in git: it syncs from the PC (see assets/README.md), then tap Rescan." % [
+	_show_pick = _picker(Shows.list_shows(), "(no shows)")
+	var show_row := _flow()
+	show_row.add_child(_label("Show"))
+	show_row.add_child(_show_pick)
+	var play_show := UiKit.button("Play", func() -> void: Shows.play_show(_picked(_show_pick)), UiKit.TEST)
+	play_show.disabled = _show_pick.disabled
+	show_row.add_child(play_show)
+	show_row.add_child(UiKit.button("Stop", func() -> void:
+		Shows.stop_show()
+		Media.stop_music(1.0)))
+	body.add_child(show_row)
+	body.add_child(UiKit.detail("A light show plays with its song (same name). Watch the lights, or the Lights LEDs on the Monitor tab."))
+
+	# Light sync offset: lights later (+) or earlier (-) than the sound.
+	var offset_row := HBoxContainer.new()
+	offset_row.add_theme_constant_override("separation", 12)
+	offset_row.add_child(_label("Light sync"))
+	var slider := HSlider.new()
+	slider.min_value = -Shows.MAX_SYNC_OFFSET_MS
+	slider.max_value = Shows.MAX_SYNC_OFFSET_MS
+	slider.step = 10
+	slider.value = Shows.sync_offset_ms
+	slider.size_flags_horizontal = SIZE_EXPAND_FILL
+	slider.size_flags_vertical = SIZE_SHRINK_CENTER
+	slider.custom_minimum_size = Vector2(200, 40)
+	offset_row.add_child(slider)
+	var ms_label := Label.new()
+	ms_label.text = "%+d ms" % slider.value
+	ms_label.custom_minimum_size.x = 110
+	offset_row.add_child(ms_label)
+	slider.value_changed.connect(func(v: float) -> void:
+		Shows.set_sync_offset(int(v))
+		ms_label.text = "%+d ms" % v)
+	body.add_child(offset_row)
+	body.add_child(UiKit.detail("If the lights run ahead of the music, move it right (later); behind, move it left."))
+
+	body.add_child(UiKit.detail("%d sounds, %d songs, %d videos, %d light shows in %s. Media isn't in git: it syncs from the PC (see assets/README.md), then tap Rescan." % [
 			Media.list_sounds().size(), Media.list_music().size(), Media.list_videos().size(),
-			ProjectSettings.globalize_path("res://assets")]))
+			Shows.list_shows().size(), ProjectSettings.globalize_path("res://assets")]))
 
 
 func _rescan() -> void:
 	Media.rescan()
+	Shows.rescan()
 	_rebuild()
 
 

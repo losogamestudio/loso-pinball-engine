@@ -8,10 +8,11 @@ This folder is the deeper write-up of the whole system. The root [`README.md`](.
 - **[Getting started](getting-started.md)** — desktop dev setup, from a blank machine to a working link on the bench.
 - **[Service menu](service-menu.md)** — the Monitor, Hardware and Audio & Video tabs: what every control does and why it's there.
 - **[Audio, music and video](audio-video.md)** — sound effects, the music manager (crossfades, per-mode songs), cutscenes, and getting media files (not in git) onto the Pi.
+- **[Lighting](lighting.md)** — WS2812B LED chains: wiring, setting up chains and lights, effects, and making light shows on Godot's timeline that run in sync with a song or video.
 - **[Deploying to a Raspberry Pi](raspberry-pi.md)** — getting the same project running on the real cabinet hardware, from a fast bench-test path (desktop icons, sound output, troubleshooting) up to a full kiosk setup.
 
 For coding conventions and the terse, authoritative project spec that Claude Code (or any contributor) should treat as ground truth, see [`CLAUDE.md`](../CLAUDE.md) at the repo root. These docs explain the *why* and walk through things step by step; `CLAUDE.md` is the compact reference that has to stay perfectly in sync with the code.
 
 ## Status
 
-This is a living set of docs for a project that's still early — expect it to grow alongside the game. Right now it covers the serial link, the configurable I/O (machine config, PINIO 0.2 firmware with its flipper/sling coil rule), the diagnostics panel, and Raspberry Pi deployment. As the config page, multi-board support, the game-state skeleton, and audio/video land, they'll get their own pages or sections here.
+This is a living set of docs for a project that's still early — expect it to grow alongside the game. Right now it covers the serial link, the configurable I/O (machine config, PINIO 0.3 firmware with its flipper/sling coil rule and WS2812B LED chains), the service menu, audio/video, lighting and light shows, and Raspberry Pi deployment. As multi-board support and the game itself grow, they'll get their own pages or sections here.

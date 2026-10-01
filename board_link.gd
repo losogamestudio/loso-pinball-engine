@@ -165,9 +165,10 @@ func _handle_line(line: String) -> void:
 				saved_fingerprint = parts[3]   # "ACK CFG SAVE <hash>"
 				burned.emit(saved_fingerprint)
 			elif arg_count >= 1 and parts[1] == "CFG" and _cfg_in_progress:
-				if arg_count >= 4 and parts[2].is_valid_int():
-					# "ACK CFG <in> <coil> <lamp> <hash>": whole layout accepted, SWS comes next
-					running_fingerprint = parts[5] if arg_count >= 5 else "-"
+				if arg_count >= 6 and parts[2].is_valid_int():
+					# "ACK CFG <in> <coil> <lamp> <chain> <zone> <hash>": whole layout
+					# accepted, SWS comes next. The hash is always the last word.
+					running_fingerprint = parts[parts.size() - 1]
 					_cfg_waiting_sws = true
 				else:
 					_send_next_cfg()           # one CFG line accepted, send the next

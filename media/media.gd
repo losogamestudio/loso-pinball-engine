@@ -53,6 +53,7 @@ var _music_stack: Array[StringName] = []
 var _fades := {}                  ## player -> its running Tween
 
 var _video_layer: CanvasLayer
+var _video_frame: AspectRatioContainer
 var _video_player: VideoStreamPlayer
 var _video_name: StringName = &""
 var _video_ducked := false
@@ -80,9 +81,9 @@ func _ready() -> void:
 
 ## Look through the asset folders again (after new media was synced in).
 func rescan() -> void:
-	_sounds = _scan(SFX_DIR, AUDIO_EXTENSIONS)
-	_music = _scan(MUSIC_DIR, AUDIO_EXTENSIONS)
-	_videos = _scan(VIDEO_DIR, VIDEO_EXTENSIONS)
+	_sounds = scan_folder(SFX_DIR, AUDIO_EXTENSIONS)
+	_music = scan_folder(MUSIC_DIR, AUDIO_EXTENSIONS)
+	_videos = scan_folder(VIDEO_DIR, VIDEO_EXTENSIONS)
 
 
 func list_sounds() -> Array[StringName]:
@@ -193,6 +194,16 @@ func current_music() -> StringName:
 	return _music_name
 
 
+## How far into the current track the listener is, in seconds, or -1 if no
+## music is playing. Light shows sync to this. It accounts for the sound
+## already mixed but not yet out of the speakers, so lights match what you hear.
+func get_music_position() -> float:
+	var player := _music_players[_music_active]
+	if _music_name == &"" or not player.playing:
+		return -1.0
+	return player.get_playback_position() + AudioServer.get_time_since_last_mix() - AudioServer.get_output_latency()
+
+
 ## Turn the music down (for a callout); unduck_music() brings it back.
 func duck_music(level := DUCK_LEVEL, fade := 0.3) -> void:
 	_music_level = level
@@ -227,6 +238,7 @@ func play_video(video_name: StringName, duck := true, preview := false) -> void:
 	_video_layer.layer = PREVIEW_LAYER if preview else VIDEO_LAYER
 	_video_layer.visible = true
 	_video_player.play()
+	_fit_video.call_deferred()   # the frame size is known once playback has started
 	video_started.emit(video_name)
 
 
@@ -239,6 +251,15 @@ func skip_video() -> void:
 
 func is_video_playing() -> bool:
 	return _video_name != &""
+
+
+## How far into the current cutscene we are, in seconds, or -1 if none is playing.
+func get_video_position() -> float:
+	return _video_player.stream_position if is_video_playing() else -1.0
+
+
+func current_video() -> StringName:
+	return _video_name
 
 
 # ---------------------------------------------------------------- volume
@@ -278,8 +299,9 @@ func _apply_volume(bus: StringName, level: float) -> void:
 	AudioServer.set_bus_volume_db(index, linear_to_db(maxf(level, 0.0001)))
 
 
-## Every file under [param dir] with one of [param extensions]: name -> path.
-func _scan(dir: String, extensions: Array[String]) -> Dictionary:
+## Every file under [param dir] (and its subfolders) with one of
+## [param extensions]: name -> path. Also used by the Shows autoload.
+func scan_folder(dir: String, extensions: Array[String]) -> Dictionary:
 	var found := {}
 	if not DirAccess.dir_exists_absolute(dir):
 		return found
@@ -287,7 +309,7 @@ func _scan(dir: String, extensions: Array[String]) -> Dictionary:
 	# in an unexported project (the Pi) and in an export.
 	for entry in ResourceLoader.list_directory(dir):
 		if entry.ends_with("/"):   # a subfolder: its files count as if they were here
-			var sub := _scan(dir.path_join(entry.trim_suffix("/")), extensions)
+			var sub := scan_folder(dir.path_join(entry.trim_suffix("/")), extensions)
 			for item: StringName in sub:
 				_add_found(found, item, sub[item])
 		elif entry.get_extension().to_lower() in extensions:
@@ -372,13 +394,26 @@ func _build_video_layer() -> void:
 	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP   # the game underneath gets no taps during a cutscene
 	backdrop.gui_input.connect(_on_video_tapped)
 	_video_layer.add_child(backdrop)
+	# The AspectRatioContainer keeps the video's shape: a 16:9 clip on a 5:3
+	# screen gets thin black bars instead of being squashed to fill it.
+	_video_frame = AspectRatioContainer.new()
+	_video_frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_video_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE   # taps go to the backdrop
+	_video_frame.ratio = 16.0 / 9.0
+	_video_layer.add_child(_video_frame)
 	_video_player = VideoStreamPlayer.new()
-	_video_player.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_video_player.mouse_filter = Control.MOUSE_FILTER_IGNORE   # taps go to the backdrop
+	_video_player.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_video_player.expand = true
 	_video_player.bus = &"Video"
 	_video_player.finished.connect(_on_video_finished)
-	_video_layer.add_child(_video_player)
+	_video_frame.add_child(_video_player)
+
+
+## Match the frame to this video's own width/height (16:9 until it's known).
+func _fit_video() -> void:
+	var texture := _video_player.get_video_texture()
+	if texture and texture.get_height() > 0:
+		_video_frame.ratio = float(texture.get_width()) / texture.get_height()
 
 
 func _on_video_tapped(event: InputEvent) -> void:

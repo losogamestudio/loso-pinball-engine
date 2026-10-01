@@ -1,0 +1,33 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://media/light_show.gd" id="1_ovqcc"]
+
+[sub_resource type="Animation" id="Animation_ic0pa"]
+length = 4.0
+tracks/0/type = "method"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"values": [{
+"args": [&"playfield", "SOLID", Color(1, 1, 1, 1), 500, Color(0, 0, 0, 1)],
+"method": &"cue"
+}]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_q1luu"]
+_data = {
+&"show": SubResource("Animation_ic0pa")
+}
+
+[node name="LightShow" type="Node" unique_id=388977579]
+script = ExtResource("1_ovqcc")
+
+[node name="SongPreview" type="AudioStreamPlayer" parent="." unique_id=1078150632]
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=996347995]
+libraries/ = SubResource("AnimationLibrary_q1luu")

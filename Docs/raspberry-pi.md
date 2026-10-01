@@ -276,7 +276,7 @@ Once you're past bench-testing and want something that boots straight into the g
 
 Godot 4's built-in video player only supports **Ogg Theora**, decoded entirely in software — there's no hardware-accelerated video path in core Godot on Linux. That's rarely a problem on a desktop, but a Pi 4's CPU can struggle with it at higher resolutions or framerates.
 
-**Before building out real cutscene content**, encode a representative test clip ([how to convert](audio-video.md#formats)), sync it to the Pi's `assets/video/`, and play it with Service → **Audio & Video** → **Media** → **Video** → **Play** on actual Pi 4 hardware. Watch for dropped frames, and check CPU load with `top` over SSH. Don't assume desktop playback performance will carry over — the Pi's CPU is a different order of magnitude from a dev desktop's.
+**Before building out real cutscene content**, encode a representative test clip ([how to make one](audio-video.md#making-videos-davinci-resolve--ogv)), sync it to the Pi's `assets/video/`, and play it with Service → **Audio & Video** → **Media** → **Video** → **Play** on actual Pi 4 hardware. Watch for dropped frames, and check CPU load with `top` over SSH. Don't assume desktop playback performance will carry over — the Pi's CPU is a different order of magnitude from a dev desktop's.
 
 If it's not fast enough, in rough order of effort:
 1. Drop resolution, framerate, or bitrate first — Theora's decode cost scales with all three.

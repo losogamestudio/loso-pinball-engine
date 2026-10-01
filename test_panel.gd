@@ -29,6 +29,7 @@ var _log: RichTextLabel
 var _input_leds := {}      ## input name -> StyleBoxFlat
 var _coil_leds := {}       ## coil name -> StyleBoxFlat
 var _lamp_leds := {}       ## lamp name -> StyleBoxFlat
+var _light_leds := {}      ## LED light name -> StyleBoxFlat (shows its color)
 var _coil_lit_until := {}  ## coil name -> Time.get_ticks_msec() when a flash ends
 var _coil_held := {}       ## coil name -> true while a HOLD ON is running
 
@@ -81,6 +82,27 @@ func _process(_delta: float) -> void:
 	for lamp_name: StringName in _lamp_leds:
 		var mode := PinballIO.get_lamp_mode(lamp_name)
 		_light(_lamp_leds[lamp_name], mode == "ON" or (mode == "BLINK" and (now / BLINK_MS) % 2 == 0))
+	for light_name: StringName in _light_leds:
+		(_light_leds[light_name] as StyleBoxFlat).bg_color = _light_preview(PinballIO.get_light(light_name), now)
+
+
+## Roughly what an LED light looks like right now, from what it was told to do.
+## The board draws the real thing; this is a one-swatch summary of it.
+func _light_preview(want: Dictionary, now: int) -> Color:
+	var c1: Color = want["color"]
+	var c2: Color = want["color2"]
+	var ms: int = maxi(want["ms"], 1)
+	match want["effect"]:
+		"OFF":
+			return LED_OFF
+		"BLINK":
+			return c2 if (now / ms) % 2 else c1
+		"PULSE":
+			return c1 * (0.3 + 0.7 * absf(sin(PI * float(now % ms) / ms)))
+		"RAINBOW":
+			return Color.from_hsv(float(now % ms) / ms, 1.0, 1.0)
+		_:
+			return c1   # SOLID, CHASE, WIPE, FADE, SPARKLE: their main color
 
 
 ## A holding coil (a flipper) stays on on the board while its trigger is closed.
@@ -256,16 +278,22 @@ func _build_leds() -> void:
 	_input_leds.clear()
 	_coil_leds.clear()
 	_lamp_leds.clear()
+	_light_leds.clear()
 	var several := MachineConfig.boards.size() > 1
 	for b in MachineConfig.boards:
 		var body := UiKit.section(_led_box, b.id if several else "I/O")
 		_led_group(body, "Inputs", MachineConfig.inputs.filter(func(i: IoDefs.InputDef) -> bool: return i.board == b.id), _input_leds)
 		_led_group(body, "Coils", MachineConfig.coils.filter(func(c: IoDefs.CoilDef) -> bool: return c.board == b.id), _coil_leds)
 		_led_group(body, "Lamps", MachineConfig.lamps.filter(func(l: IoDefs.LampDef) -> bool: return l.board == b.id), _lamp_leds)
+		# LED lights show their first LED's number (they have no pin of their own).
+		var lights_here := MachineConfig.lights.filter(func(l: IoDefs.LightDef) -> bool: return MachineConfig.light_board(l) == b.id)
+		_led_group(body, "Lights", lights_here, _light_leds, "first")
 
 
-## A small heading and a wrapping row of LEDs, one per item, sorted by pin.
-func _led_group(parent: Control, title: String, items: Array, leds: Dictionary) -> void:
+## A small heading and a wrapping row of LEDs, one per item, sorted by
+## [param number_field] ("pin", or "first" for LED lights), which is also the
+## number shown on each LED.
+func _led_group(parent: Control, title: String, items: Array, leds: Dictionary, number_field := "pin") -> void:
 	if items.is_empty():
 		return
 	var heading := UiKit.detail(title)
@@ -276,7 +304,7 @@ func _led_group(parent: Control, title: String, items: Array, leds: Dictionary) 
 	row.add_theme_constant_override("h_separation", 6)
 	row.add_theme_constant_override("v_separation", 6)
 	parent.add_child(row)
-	items.sort_custom(func(a: Variant, b: Variant) -> bool: return a.pin < b.pin)
+	items.sort_custom(func(a: Variant, b: Variant) -> bool: return a.get(number_field) < b.get(number_field))
 	for item: Variant in items:
 		var style := StyleBoxFlat.new()
 		style.bg_color = LED_OFF
@@ -288,7 +316,7 @@ func _led_group(parent: Control, title: String, items: Array, leds: Dictionary) 
 		led.add_theme_stylebox_override("panel", style)
 		led.tooltip_text = String(item.name)   # the name, for a mouse on the desktop
 		var pin := Label.new()
-		pin.text = str(item.pin)
+		pin.text = str(item.get(number_field))
 		pin.set_anchors_preset(Control.PRESET_FULL_RECT)
 		pin.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		pin.vertical_alignment = VERTICAL_ALIGNMENT_CENTER

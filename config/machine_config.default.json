@@ -18,5 +18,12 @@
 	],
 	"lamps": [
 		{ "name": "lamp_0", "board": "main", "pin": 27 }
+	],
+	"chains": [
+		{ "name": "led_chain_0", "board": "main", "pin": 8, "count": 30, "order": "GRB" }
+	],
+	"lights": [
+		{ "name": "playfield",   "chain": "led_chain_0", "first": 0, "count": 30 },
+		{ "name": "shoot_again", "chain": "led_chain_0", "first": 0, "count": 1 }
 	]
 }

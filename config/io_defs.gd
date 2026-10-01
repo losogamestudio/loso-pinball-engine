@@ -128,6 +128,65 @@ class LampDef:
 		return l
 
 
+## LED effects the board can run on a light (Firmware/pinio/leds.h).
+## `ms` is the period, or the duration for FADE and WIPE.
+const EFFECTS: Array[String] = ["OFF", "SOLID", "BLINK", "PULSE", "CHASE", "WIPE", "FADE", "RAINBOW", "SPARKLE"]
+const EFFECT_HELP := {
+	"OFF": "nothing (anything underneath shows through)",
+	"SOLID": "color 1",
+	"BLINK": "color 1 / color 2, ms each",
+	"PULSE": "color 1 breathing, one breath every ms",
+	"CHASE": "every 3rd LED in color 1 over color 2, one step every ms",
+	"WIPE": "fills with color 1 over color 2 across ms",
+	"FADE": "fades from the previous color to color 1 across ms",
+	"RAINBOW": "rainbow along the light, one cycle every ms",
+	"SPARKLE": "random color 1 flashes over color 2, new pattern every ms",
+}
+## Byte order of an LED chain. Most WS2812B strips are GRB.
+const COLOR_ORDERS: Array[String] = ["GRB", "RGB", "BRG", "RBG", "GBR", "BGR"]
+
+
+## One WS2812B LED chain: a strip (or several soldered in a row) on one output pin.
+class ChainDef:
+	var name: StringName             ## e.g. &"playfield_chain"
+	var board: StringName = &"main"
+	var pin: int = -1
+	var count: int = 30              ## LEDs on the chain
+	var order: String = "GRB"        ## one of IoDefs.COLOR_ORDERS
+
+	func to_dict() -> Dictionary:
+		return {"name": String(name), "board": String(board), "pin": pin, "count": count, "order": order}
+
+	static func from_dict(d: Dictionary) -> ChainDef:
+		var c := ChainDef.new()
+		c.name = StringName(d.get("name", ""))
+		c.board = StringName(d.get("board", "main"))
+		c.pin = int(d.get("pin", -1))
+		c.count = int(d.get("count", 30))
+		c.order = str(d.get("order", "GRB"))
+		return c
+
+
+## One named light: a range of LEDs on a chain. count 1 = a single insert;
+## more = a strip or a section of one. Lights may overlap; smaller ones draw on top.
+class LightDef:
+	var name: StringName             ## what game code and shows call it, e.g. &"shoot_again"
+	var chain: StringName            ## the ChainDef it's on (its board is the chain's board)
+	var first: int = 0               ## first LED, counting from 0 at the chain's input end
+	var count: int = 1
+
+	func to_dict() -> Dictionary:
+		return {"name": String(name), "chain": String(chain), "first": first, "count": count}
+
+	static func from_dict(d: Dictionary) -> LightDef:
+		var l := LightDef.new()
+		l.name = StringName(d.get("name", ""))
+		l.chain = StringName(d.get("chain", ""))
+		l.first = int(d.get("first", 0))
+		l.count = int(d.get("count", 1))
+		return l
+
+
 ## What one board gets told: its CFG lines, plus which name sits at each
 ## local index (the board only knows numbers, game code only knows names).
 class BoardPlan:
@@ -135,5 +194,7 @@ class BoardPlan:
 	var input_names: Array[StringName] = []   ## index = board's input number
 	var coil_names: Array[StringName] = []    ## index = board's coil number
 	var lamp_names: Array[StringName] = []    ## index = board's lamp number
+	var chain_names: Array[StringName] = []   ## index = board's LED chain number
+	var light_names: Array[StringName] = []   ## index = board's zone number
 	var lines: PackedStringArray = []         ## CFG lines, in order, ending with CFG DONE
 	var fingerprint: String = ""              ## layout hash, same as the board reports

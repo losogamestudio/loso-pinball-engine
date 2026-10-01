@@ -6,7 +6,7 @@ extends SceneTree
 ## Prints PASS/FAIL per check and exits with code 1 if anything failed.
 ##
 ## A tiny fake board stands in for the Teensy: it answers HELLO, ACKs CFG
-## lines the way PINIO 0.2 does, and can be told to reject one line.
+## lines the way PINIO 0.3 does, and can be told to reject one line.
 
 const MachineConfigScript := preload("res://config/machine_config.gd")
 
@@ -66,11 +66,15 @@ func _test_default_config() -> void:
 		"CFG COIL 1 26 40 0 2 - 150",
 		"CFG COIL 2 3 30 0 - - 500",
 		"CFG LAMP 0 27",
+		"CFG CHAIN 0 8 30 GRB",
+		"CFG ZONE 0 0 0 30",
+		"CFG ZONE 1 0 0 1",
 		"CFG DONE",
 	]
 	_check(plan.lines == expected, "default config builds the expected CFG lines\n      got: %s" % "\n           ".join(plan.lines))
 	_check(plan.coil_names[0] == &"flipper_left" and plan.input_names[2] == &"sling_left_switch",
 			"plan maps board numbers back to names")
+	_check(plan.light_names == [&"playfield", &"shoot_again"], "lights are zones in draw order, the insert after the strip")
 
 	# Round trip through the JSON shape.
 	var again: Node = load("res://config/machine_config.gd").new()
@@ -99,10 +103,32 @@ func _test_validation_catches_mistakes() -> void:
 	_check(text.contains("different board"), "catches a trigger on another board")
 	cfg.free()
 
+	cfg = _new_config()
+	cfg.lights[1].first = 30               # LED 30 on a 30-LED chain (0..29)
+	cfg.chains[0].pin = 27                 # lamp_0's pin
+	cfg.chains[0].order = "XYZ"
+	text = "
+".join(cfg.validate() as PackedStringArray)
+	_check(text.contains("doesn't fit on"), "catches a light past the end of its chain")
+	_check(text.contains("both use pin 27"), "catches a chain on a pin that's taken")
+	_check(text.contains("color order"), "catches a bad color order")
+	cfg.lights[1].first = 0
+	cfg.chains[0].pin = 8
+	cfg.chains[0].order = "GRB"
+	for n in 96:
+		var extra := IoDefs.LightDef.new()
+		extra.name = StringName("led_%d" % n)
+		extra.chain = &"led_chain_0"
+		cfg.lights.append(extra)
+	text = "
+".join(cfg.validate() as PackedStringArray)
+	_check(text.contains("has 98 zones, its limit is 96"), "catches too many lights for one board")
+	cfg.free()
+
 
 # ---------------------------------------------------------------- BoardLink with a fake board
 
-## Just enough of a PINIO 0.2 board to exercise the link.
+## Just enough of a PINIO 0.3 board to exercise the link.
 class FakeBoard:
 	var link: BoardLink
 	var received: PackedStringArray = []
@@ -113,13 +139,15 @@ class FakeBoard:
 	var inputs := 0
 	var coils := 0
 	var lamps := 0
+	var chains := 0
+	var zones := 0
 
 	func handle(line: String) -> void:
 		received.append(line)
 		var parts := line.split(" ")
 		match parts[0]:
 			"HELLO":
-				_reply("HELLO PINIO 0.2 TEENSY41 12345670 %s %s" % [running, saved])
+				_reply("HELLO PINIO 0.3 TEENSY41 12345670 %s %s" % [running, saved])
 			"SWS":
 				_reply("SWS " + "0".repeat(inputs))
 			"CFG":
@@ -134,7 +162,7 @@ class FakeBoard:
 					_reply("ACK CFG CLEAR")
 				elif parts[1] == "DONE":
 					running = MachineConfigScript.layout_hash(layout)
-					_reply("ACK CFG %d %d %d %s" % [inputs, coils, lamps, running])
+					_reply("ACK CFG %d %d %d %d %d %s" % [inputs, coils, lamps, chains, zones, running])
 					_reply("SWS " + "0".repeat(inputs))
 				elif parts[1] == "SAVE":
 					saved = running
@@ -167,7 +195,7 @@ func _test_link_handshake() -> void:
 	link.configured.connect(func() -> void: events.append("configured"))
 
 	link.start()
-	_check(events.size() == 1 and events[0] == "linked PINIO 0.2 TEENSY41 12345670", "HELLO reply parsed: %s" % str(events))
+	_check(events.size() == 1 and events[0] == "linked PINIO 0.3 TEENSY41 12345670", "HELLO reply parsed: %s" % str(events))
 
 	var plan: IoDefs.BoardPlan = cfg.build_plan(cfg.boards[0])
 	var lines: PackedStringArray = ["CFG CLEAR"]

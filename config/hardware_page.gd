@@ -10,6 +10,12 @@ extends MarginContainer
 
 const CoilWizardScript := preload("res://config/coil_wizard.gd")
 const InputEditorScript := preload("res://config/input_editor.gd")
+const ChainEditorScript := preload("res://config/chain_editor.gd")
+const LightEditorScript := preload("res://config/light_editor.gd")
+
+## The Test button on a light row runs this, and pressing it again turns it off.
+const TEST_EFFECT := "RAINBOW"
+const TEST_EFFECT_MS := 2000
 
 var _list_scroll: ScrollContainer
 var _list: VBoxContainer
@@ -78,6 +84,8 @@ func _rebuild() -> void:
 	_build_boards()
 	_build_coils()
 	_build_switches()
+	_build_chains()
+	_build_lights()
 	_build_lamps()
 	_build_footer()
 
@@ -197,8 +205,78 @@ func _build_switches() -> void:
 	body.add_child(UiKit.note("The lamp shows the switch live while a board is running. A coil's setup can also create its switches."))
 
 
-## One button per lamp that cycles OFF / ON / BLINK. A placeholder: lighting
-## will become WS2812B LED chains.
+## WS2812B strips: which pin drives each one and how many LEDs it has.
+func _build_chains() -> void:
+	var add: Array[Control] = [UiKit.button("+ Add chain", _open_chain_editor.bind(&""), UiKit.PRIMARY)]
+	var body := UiKit.section(_list, "LED chains", add)
+	if MachineConfig.chains.is_empty():
+		body.add_child(UiKit.note("No LED chains yet. A chain is one WS2812B strip on one output pin."))
+	for c in MachineConfig.chains:
+		var row := UiKit.row_card(body)
+		var lights_on := MachineConfig.lights_on_chain(c.name)
+		var detail := "%d LEDs · %s · %d light%s" % [c.count, c.order, lights_on.size(), "" if lights_on.size() == 1 else "s"]
+		row.add_child(UiKit.name_block("%s · pin %d" % [c.name, c.pin], detail))
+		row.add_child(UiKit.button("Edit", _open_chain_editor.bind(c.name)))
+		row.add_child(UiKit.button("Delete", _ask_delete_chain.bind(c.name), UiKit.DANGER))
+
+
+## Named lights (LED ranges), with a quick test and the brightness for every chain.
+func _build_lights() -> void:
+	if MachineConfig.chains.is_empty() and MachineConfig.lights.is_empty():
+		return
+	var head: Array[Control] = [
+		UiKit.button("+ Add light", _open_light_editor.bind(&""), UiKit.PRIMARY),
+		UiKit.button("All off", func() -> void:
+			PinballIO.all_lights_off()
+			_rebuild()),
+	]
+	var body := UiKit.section(_list, "Lights", head)
+
+	var bright_row := HBoxContainer.new()
+	bright_row.add_theme_constant_override("separation", 12)
+	var bright_label := Label.new()
+	bright_label.text = "Brightness"
+	bright_row.add_child(bright_label)
+	var slider := HSlider.new()
+	slider.min_value = 5
+	slider.max_value = 100
+	slider.step = 5
+	slider.value = roundf(PinballIO.light_brightness * 100.0)
+	slider.size_flags_horizontal = SIZE_EXPAND_FILL
+	slider.size_flags_vertical = SIZE_SHRINK_CENTER
+	slider.custom_minimum_size = Vector2(200, 40)
+	bright_row.add_child(slider)
+	var percent := Label.new()
+	percent.text = "%d%%" % slider.value
+	percent.custom_minimum_size.x = 90
+	bright_row.add_child(percent)
+	# Sent when you let go, not on every step of the drag.
+	slider.value_changed.connect(func(v: float) -> void: percent.text = "%d%%" % v)
+	slider.drag_ended.connect(func(_changed: bool) -> void: PinballIO.set_light_brightness(slider.value / 100.0))
+	body.add_child(bright_row)
+
+	for l in MachineConfig.lights:
+		var row := UiKit.row_card(body)
+		var range_text := "LED %d" % l.first if l.count == 1 else "LEDs %d-%d" % [l.first, l.first + l.count - 1]
+		var effect: String = PinballIO.get_light(l.name)["effect"]
+		row.add_child(UiKit.name_block(String(l.name), "%s · %s · %s" % [l.chain, range_text, effect.to_lower()]))
+		row.add_child(UiKit.button("Test", _test_light.bind(l.name), UiKit.TEST))
+		row.add_child(UiKit.button("Edit", _open_light_editor.bind(l.name)))
+		row.add_child(UiKit.button("Delete", _ask_delete_light.bind(l.name), UiKit.DANGER))
+	body.add_child(UiKit.note("Test runs a rainbow; press again for off. Game code and light shows use these names. Wiring and power: Docs/lighting.md."))
+
+
+func _test_light(light_name: StringName) -> void:
+	var on: bool = PinballIO.get_light(light_name)["effect"] == "OFF"
+	if on:
+		PinballIO.set_light(light_name, TEST_EFFECT, Color.WHITE, TEST_EFFECT_MS)
+	else:
+		PinballIO.set_light(light_name, "OFF")
+	_rebuild()   # the row shows the light's effect
+
+
+## One button per lamp that cycles OFF / ON / BLINK. These are plain on/off
+## output pins; LED chains are above.
 func _build_lamps() -> void:
 	if MachineConfig.lamps.is_empty():
 		return
@@ -210,7 +288,7 @@ func _build_lamps() -> void:
 		b.text = "%s · pin %d: %s" % [l.name, l.pin, PinballIO.get_lamp_mode(l.name)]
 		b.pressed.connect(_cycle_lamp.bind(l, b))
 		row.add_child(b)
-	body.add_child(UiKit.detail("All lighting will be WS2812B LED chains, set up in a later version."))
+	body.add_child(UiKit.detail("Plain on/off outputs (CFG LAMP). Playfield lighting uses the LED chains above."))
 
 
 func _cycle_lamp(l: IoDefs.LampDef, button: Button) -> void:
@@ -283,6 +361,18 @@ func _open_input_editor(input_name: StringName) -> void:
 	_show_editor(editor)
 
 
+func _open_chain_editor(chain_name: StringName) -> void:
+	var editor: Node = ChainEditorScript.new()
+	editor.open(chain_name)
+	_show_editor(editor)
+
+
+func _open_light_editor(light_name: StringName) -> void:
+	var editor: Node = LightEditorScript.new()
+	editor.open(light_name)
+	_show_editor(editor)
+
+
 ## Swap the list for an editor until it emits `closed`.
 func _show_editor(editor: Node) -> void:
 	UiKit.free_children(_editor_host)
@@ -334,6 +424,23 @@ func _ask_delete_input(input_name: StringName) -> void:
 func _delete_input(input_name: StringName) -> void:
 	MachineConfig.remove_input(input_name)
 	_save_and_apply()
+
+
+func _ask_delete_chain(chain_name: StringName) -> void:
+	var lights_on := MachineConfig.lights_on_chain(chain_name)
+	if not lights_on.is_empty():
+		_ask("Lights %s are on '%s'. Delete or move those lights first." % [", ".join(lights_on), chain_name],
+				Callable())   # nothing to do on OK
+		return
+	_ask("Delete LED chain '%s'?" % chain_name, func() -> void:
+		MachineConfig.remove_chain(chain_name)
+		_save_and_apply())
+
+
+func _ask_delete_light(light_name: StringName) -> void:
+	_ask("Delete light '%s'? Light shows that use it will skip it." % light_name, func() -> void:
+		MachineConfig.remove_light(light_name)
+		_save_and_apply())
 
 
 func _ask_reset() -> void:

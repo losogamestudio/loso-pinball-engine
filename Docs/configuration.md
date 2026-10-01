@@ -63,6 +63,13 @@ The diagnostics panel (P key) shows which file was loaded, and lists any problem
   ],
   "lamps": [
     { "name": "lamp_0", "board": "main", "pin": 27 }
+  ],
+  "chains": [
+    { "name": "led_chain_0", "board": "main", "pin": 8, "count": 30, "order": "GRB" }
+  ],
+  "lights": [
+    { "name": "playfield",   "chain": "led_chain_0", "first": 0, "count": 30 },
+    { "name": "shoot_again", "chain": "led_chain_0", "first": 0, "count": 1 }
   ]
 }
 ```
@@ -113,7 +120,31 @@ A coil's trigger and EOS must be inputs **on the same board** as the coil: the b
 
 ### lamps
 
-Just a `name`, `board` and output `pin`.
+Just a `name`, `board` and output `pin`: a plain on/off output.
+
+### chains
+
+WS2812B LED strips. See [Lighting](lighting.md) for wiring.
+
+| Field | Meaning |
+|---|---|
+| `name` | Your name for the chain. Lights say which chain they're on with this. |
+| `board`, `pin` | Any free output pin (on a Teensy 4.1: 2–12, 24–32). Up to 4 chains per board. |
+| `count` | LEDs on the chain, 1–300. |
+| `order` | Color byte order: `GRB` for most WS2812B, or `RGB`, `BRG`, `RBG`, `GBR`, `BGR`. |
+
+### lights
+
+Named LED ranges that game code and light shows use. One LED is an insert; more is a strip or a section of one.
+
+| Field | Meaning |
+|---|---|
+| `name` | What game code and shows call it. |
+| `chain` | The chain it's on (its board is the chain's board). |
+| `first` | First LED, counting from 0 at the chain's data-in end. |
+| `count` | How many LEDs. `first + count` must fit on the chain. Up to 96 lights per board. |
+
+Lights may overlap. Godot sends bigger lights first, and the board draws later ones on top, so an insert inside a strip always shows.
 
 ## Getting it onto the board
 
@@ -123,9 +154,10 @@ When a board connects, Godot compares the board's layout fingerprint with its ow
 
 Godot checks these before sending anything to a board (`MachineConfig.validate()`), and the board checks them again:
 
-- Every name is unique across inputs, coils *and* lamps, and has no spaces.
+- Every name is unique across inputs, coils, lamps, LED chains *and* lights, and has no spaces.
 - A pin is used by only one thing per board, and never a reserved pin (on a Teensy 4.1: 0 and 1 are Serial1, 13 is the status LED, and 18 and 19 are I2C).
-- Inputs go on input pins and coils/lamps on output pins. A hold % between 1 and 99 needs a PWM pin.
+- Inputs go on input pins, and coils, lamps and LED chains on output pins. A hold % between 1 and 99 needs a PWM pin.
+- A light fits on its chain, and a board has at most 4 chains and 96 lights.
 - A trigger or EOS names an existing input on the same board, and a coil's trigger and EOS aren't the same input.
 - A board can have at most 24 inputs, 24 coils and 24 lamps (Teensy 4.1).
 

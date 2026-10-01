@@ -1,4 +1,4 @@
-# Serial protocol (v0.2)
+# Serial protocol (v0.3)
 
 The boards and Godot talk over USB serial using plain ASCII text: one message per line, ending in `\n`, tokens separated by single spaces. It's deliberately human-readable. You can plug into a board with a plain serial monitor (the Arduino IDE's, `screen`, `minicom`, whatever) and type commands by hand, or just watch traffic scroll by. A binary framing (COBS + CRC) is a possible future step, but not yet.
 
@@ -6,7 +6,7 @@ The boards and Godot talk over USB serial using plain ASCII text: one message pe
 
 ## The big idea: the board is told what it is
 
-The firmware (`PINIO 0.2`) is **generic**. It knows only what each of its own pins *can* do: input, output, or PWM-capable output (that's `Firmware/pinio/board_teensy41.h`). It doesn't know it's driving a flipper or reading a slingshot switch.
+The firmware (`PINIO 0.3`) is **generic**. It knows only what each of its own pins *can* do: input, output, or PWM-capable output (that's `Firmware/pinio/board_teensy41.h`). It doesn't know it's driving a flipper or reading a slingshot switch.
 
 Godot tells it. After every `HELLO`, Godot sends the layout from the [machine config](configuration.md) as a series of `CFG` lines:
 
@@ -31,8 +31,8 @@ To keep the board and Godot from disagreeing, every layout has a **fingerprint**
 | Family | Direction | Messages |
 |---|---|---|
 | Link | both | `HELLO`, `HB`, `PING`/`PONG`, `WD TRIP`/`WD OK` |
-| Config | Godot → board | `CFG CLEAR`, `CFG PWM`, `CFG IN`, `CFG COIL`, `CFG LAMP`, `CFG DONE`, `CFG SAVE`, `CFG ERASE` |
-| Commands | Godot → board | `PULSE`, `HOLD`, `RULE`, `LED`, `SWS` |
+| Config | Godot → board | `CFG CLEAR`, `CFG PWM`, `CFG IN`, `CFG COIL`, `CFG LAMP`, `CFG CHAIN`, `CFG ZONE`, `CFG DONE`, `CFG SAVE`, `CFG ERASE` |
+| Commands | Godot → board | `PULSE`, `HOLD`, `RULE`, `LED`, `FX`, `BRIGHT`, `SWS` |
 | Events | board → Godot | `SWS`, `SW`, `FIRED` |
 | Replies | board → Godot | `ACK ...`, `ERR ...` |
 
@@ -50,11 +50,22 @@ Every coil runs the same little state machine **on the board**. Godot configures
 
 A coil with no trigger is fired only by Godot: `PULSE` (once) or `HOLD ON`/`HOLD OFF` (diverters, magnets).
 
+## LED chains: the board draws, Godot cues
+
+WS2812B strips work the same way. Godot tells the board where they are, and then only sends short cues:
+
+- `CFG CHAIN <chain> <pin> <count> <order>` defines a strip on an output pin. Chains are numbered 0, 1, 2… in order.
+- `CFG ZONE <zone> <chain> <first> <count>` defines a named light (a range of LEDs). Godot numbers the bigger lights first, and the board draws zones in number order, so small inserts land on top of the strips they sit in.
+- `FX <zone|ALL> <effect> [RRGGBB] [ms] [RRGGBB2]` starts an effect, which the board then draws about 60 times a second by itself. Effects: `OFF SOLID BLINK PULSE CHASE WIPE FADE RAINBOW SPARKLE`.
+- `BRIGHT <0..255>` sets the brightness for every chain.
+
+The watchdog, `HELLO` and `CFG SAVE` turn every zone off, like coils and lamps, and PinballIO re-sends the wanted effects. See [Lighting](lighting.md) for wiring and light shows.
+
 ## A typical session
 
 ```
 Godot:  HELLO
-Board:  HELLO PINIO 0.2 TEENSY41 12345670 - -   # firmware, board type, serial number,
+Board:  HELLO PINIO 0.3 TEENSY41 12345670 - -   # firmware, board type, serial number,
                                           # running + burned fingerprints ("-" = blank board)
 Godot:  CFG CLEAR                         # config lines go one at a time,
 Board:  ACK CFG CLEAR                     # each waiting for its ACK
@@ -74,8 +85,14 @@ Godot:  CFG COIL 2 3 30 0 - - 500         # coil 2 = kickout: Godot-fired only
 Board:  ACK CFG COIL 2
 Godot:  CFG LAMP 0 27
 Board:  ACK CFG LAMP 0
+Godot:  CFG CHAIN 0 8 30 GRB              # LED chain 0 = WS2812B strip on pin 8, 30 LEDs
+Board:  ACK CFG CHAIN 0
+Godot:  CFG ZONE 0 0 0 30                 # zone 0 = playfield (LEDs 0-29)
+Board:  ACK CFG ZONE 0
+Godot:  CFG ZONE 1 0 0 1                  # zone 1 = shoot_again (LED 0), drawn on top
+Board:  ACK CFG ZONE 1
 Godot:  CFG DONE
-Board:  ACK CFG 3 3 1 4AC3701E            # 3 inputs, 3 coils, 1 lamp, layout fingerprint
+Board:  ACK CFG 3 3 1 1 2 4AC3701E        # 3 inputs, 3 coils, 1 lamp, 1 chain, 2 zones, fingerprint
 Board:  SWS 000                           # every input's state, so Godot starts in sync
 Godot:  HB                                # every 100 ms from here on
 Board:  HB 41213                          # every 1 s from here on
@@ -93,6 +110,8 @@ Board:  SW 2 1
 ...
 Godot:  PULSE 2                           # kick the ball out (uses the coil's 30 ms)
 Board:  ACK PULSE 2 30
+Godot:  FX 1 BLINK FF8000 250 000000      # shoot_again: orange / black, 250 ms each
+Board:  ACK FX 1 BLINK
 ...                                       # someone unplugs the board
                                           # (500 ms of silence trips the board's watchdog)
 Board:  WD TRIP
@@ -109,7 +128,7 @@ Godot:  RULE ALL ON                       # PinballIO re-arms what the game want
 Board:  ACK RULE ALL ON
 ...                                       # power off, power on: the board replays its EEPROM
 Godot:  HELLO
-Board:  HELLO PINIO 0.2 TEENSY41 12345670 4AC3701E 4AC3701E   # already running the burned layout
+Board:  HELLO PINIO 0.3 TEENSY41 12345670 4AC3701E 4AC3701E   # already running the burned layout
 Godot:  SWS                               # fingerprint matches Godot's: nothing to send
 Board:  SWS 000
 ```
@@ -137,4 +156,4 @@ Why the asymmetry (500 ms vs. 3 s)? The board's watchdog is a hardware-safety me
 
 ## Versioning
 
-The firmware string (`PINIO 0.2`) moves whenever the protocol shape changes. Bump it in the same change that touches `pinio.ino`, `board_link.gd`/`pinball_io.gd`, and the `CLAUDE.md` table, and update `BoardTypes.FIRMWARE` to match. Godot refuses to configure a board that reports a different version, and says so in the diagnostics log.
+The firmware string (`PINIO 0.3`) moves whenever the protocol shape changes. Bump it in the same change that touches `pinio.ino`, `board_link.gd`/`pinball_io.gd`, and the `CLAUDE.md` table, and update `BoardTypes.FIRMWARE` to match. Godot refuses to configure a board that reports a different version, and says so in the diagnostics log.

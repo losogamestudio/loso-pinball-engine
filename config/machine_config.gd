@@ -31,6 +31,8 @@ var boards: Array[IoDefs.BoardDef] = []
 var inputs: Array[IoDefs.InputDef] = []
 var coils: Array[IoDefs.CoilDef] = []
 var lamps: Array[IoDefs.LampDef] = []
+var chains: Array[IoDefs.ChainDef] = []   ## WS2812B LED chains
+var lights: Array[IoDefs.LightDef] = []   ## named LED ranges on those chains
 var loaded_from := ""   ## which file the current layout came from
 
 
@@ -79,6 +81,8 @@ func to_dict() -> Dictionary:
 		"inputs": inputs.map(func(i: IoDefs.InputDef) -> Dictionary: return i.to_dict()),
 		"coils": coils.map(func(c: IoDefs.CoilDef) -> Dictionary: return c.to_dict()),
 		"lamps": lamps.map(func(l: IoDefs.LampDef) -> Dictionary: return l.to_dict()),
+		"chains": chains.map(func(c: IoDefs.ChainDef) -> Dictionary: return c.to_dict()),
+		"lights": lights.map(func(l: IoDefs.LightDef) -> Dictionary: return l.to_dict()),
 	}
 
 
@@ -87,6 +91,8 @@ func _apply_dict(data: Dictionary) -> void:
 	inputs.clear()
 	coils.clear()
 	lamps.clear()
+	chains.clear()
+	lights.clear()
 	for d: Dictionary in data.get("boards", []):
 		boards.append(IoDefs.BoardDef.from_dict(d))
 	for d: Dictionary in data.get("inputs", []):
@@ -95,6 +101,10 @@ func _apply_dict(data: Dictionary) -> void:
 		coils.append(IoDefs.CoilDef.from_dict(d))
 	for d: Dictionary in data.get("lamps", []):
 		lamps.append(IoDefs.LampDef.from_dict(d))
+	for d: Dictionary in data.get("chains", []):   # older config files have none
+		chains.append(IoDefs.ChainDef.from_dict(d))
+	for d: Dictionary in data.get("lights", []):
+		lights.append(IoDefs.LightDef.from_dict(d))
 
 
 # ---------------------------------------------------------------- lookups
@@ -125,6 +135,26 @@ func find_lamp(lamp_name: StringName) -> IoDefs.LampDef:
 		if l.name == lamp_name:
 			return l
 	return null
+
+
+func find_chain(chain_name: StringName) -> IoDefs.ChainDef:
+	for c in chains:
+		if c.name == chain_name:
+			return c
+	return null
+
+
+func find_light(light_name: StringName) -> IoDefs.LightDef:
+	for l in lights:
+		if l.name == light_name:
+			return l
+	return null
+
+
+## The board a light is on (its chain's board), or &"" if its chain is missing.
+func light_board(l: IoDefs.LightDef) -> StringName:
+	var c := find_chain(l.chain)
+	return c.board if c else &""
 
 
 # ---------------------------------------------------------------- editing (used by the setup page)
@@ -165,6 +195,9 @@ func free_pins(board_id: StringName, caps: int, keep_pin := -1) -> Array[int]:
 	for l in lamps:
 		if l.board == board_id:
 			used[l.pin] = true
+	for c in chains:
+		if c.board == board_id:
+			used[c.pin] = true
 	for pin in BoardTypes.pins_with(b.type, caps):
 		if pin == keep_pin or not used.has(pin):
 			out.append(pin)
@@ -191,11 +224,12 @@ func coils_using_input(input_name: StringName) -> PackedStringArray:
 	return out
 
 
-## True if some input, coil or lamp other than [param except] already has this name.
+## True if some input, coil, lamp, chain or light other than [param except] already has this name.
 func is_name_taken(item_name: StringName, except: StringName = &"") -> bool:
 	if item_name == except:
 		return false
-	return find_input(item_name) != null or find_coil(item_name) != null or find_lamp(item_name) != null
+	return find_input(item_name) != null or find_coil(item_name) != null or find_lamp(item_name) != null \
+			or find_chain(item_name) != null or find_light(item_name) != null
 
 
 ## [param base] if it's free, otherwise base_2, base_3, ...
@@ -218,6 +252,27 @@ func remove_input(input_name: StringName) -> bool:
 		return false
 	inputs.assign(inputs.filter(func(i: IoDefs.InputDef) -> bool: return i.name != input_name))
 	return true
+
+
+## Names of the lights on [param chain_name].
+func lights_on_chain(chain_name: StringName) -> PackedStringArray:
+	var out: PackedStringArray = []
+	for l in lights:
+		if l.chain == chain_name:
+			out.append(String(l.name))
+	return out
+
+
+## Remove a chain. Refuses (returns false) while lights are on it.
+func remove_chain(chain_name: StringName) -> bool:
+	if not lights_on_chain(chain_name).is_empty():
+		return false
+	chains.assign(chains.filter(func(c: IoDefs.ChainDef) -> bool: return c.name != chain_name))
+	return true
+
+
+func remove_light(light_name: StringName) -> void:
+	lights.assign(lights.filter(func(l: IoDefs.LightDef) -> bool: return l.name != light_name))
 
 
 # ---------------------------------------------------------------- validation
@@ -276,6 +331,26 @@ func validate() -> PackedStringArray:
 		if b:
 			_check_pin(b, l.pin, BoardTypes.CAP_OUT, l.name, used_pins, errors)
 
+	for c in chains:
+		_check_name(c.name, "LED chain", names, errors)
+		var b := _check_board(c.board, c.name, errors)
+		if b:
+			_check_pin(b, c.pin, BoardTypes.CAP_OUT, c.name, used_pins, errors)
+			var most := BoardTypes.limit(b.type, "max_leds_per_chain")
+			if c.count < 1 or c.count > most:
+				errors.append("LED chain '%s' must have 1..%d LEDs" % [c.name, most])
+		if not IoDefs.COLOR_ORDERS.has(c.order):
+			errors.append("LED chain '%s' has unknown color order '%s'" % [c.name, c.order])
+
+	for l in lights:
+		_check_name(l.name, "light", names, errors)
+		var c := find_chain(l.chain)
+		if c == null:
+			errors.append("light '%s' is on LED chain '%s', which doesn't exist" % [l.name, l.chain])
+		elif l.first < 0 or l.count < 1 or l.first + l.count > c.count:
+			errors.append("light '%s' (LEDs %d-%d) doesn't fit on '%s' (%d LEDs)" % [
+					l.name, l.first, l.first + l.count - 1, c.name, c.count])
+
 	for b in boards:
 		if not BoardTypes.has_type(b.type):
 			continue
@@ -284,6 +359,8 @@ func validate() -> PackedStringArray:
 			"inputs": plan.input_names.size(),
 			"coils": plan.coil_names.size(),
 			"lamps": plan.lamp_names.size(),
+			"chains": plan.chain_names.size(),
+			"zones": plan.light_names.size(),
 		}
 		for kind: String in counts:
 			var count: int = counts[kind]
@@ -338,7 +415,8 @@ func _check_coil_input(c: IoDefs.CoilDef, input_name: StringName, role: String, 
 # ---------------------------------------------------------------- per-board plan
 
 ## Work out what [param board] gets told: local numbers for each of its
-## inputs/coils/lamps (in config order) and the CFG lines to send.
+## inputs/coils/lamps/chains (in config order) and lights (biggest first),
+## and the CFG lines to send.
 ## Doesn't validate; call validate() first.
 func build_plan(board: IoDefs.BoardDef) -> IoDefs.BoardPlan:
 	var plan := IoDefs.BoardPlan.new()
@@ -365,6 +443,21 @@ func build_plan(board: IoDefs.BoardDef) -> IoDefs.BoardPlan:
 		plan.lines.append("CFG LAMP %d %d" % [plan.lamp_names.size(), l.pin])
 		plan.lamp_names.append(l.name)
 
+	for c in chains:
+		if c.board != board.id:
+			continue
+		plan.lines.append("CFG CHAIN %d %d %d %s" % [plan.chain_names.size(), c.pin, c.count, c.order])
+		plan.chain_names.append(c.name)
+
+	# The board draws zones in number order, later ones on top. Bigger lights
+	# first, so single inserts always draw over the strips they sit on.
+	for l in _lights_in_draw_order(board.id):
+		var chain_index := plan.chain_names.find(l.chain)
+		if chain_index == -1:
+			continue   # chain missing; validate() reports it
+		plan.lines.append("CFG ZONE %d %d %d %d" % [plan.light_names.size(), chain_index, l.first, l.count])
+		plan.light_names.append(l.name)
+
 	plan.fingerprint = layout_hash(plan.lines)
 	plan.lines.append("CFG DONE")
 	return plan
@@ -389,6 +482,20 @@ static func fnv1a(data: PackedByteArray) -> int:
 	for b in data:
 		h = ((h ^ b) * 16777619) & 0xFFFFFFFF
 	return h
+
+
+## Lights on [param board_id], biggest first; equal sizes keep config order.
+func _lights_in_draw_order(board_id: StringName) -> Array[IoDefs.LightDef]:
+	var on_board: Array[IoDefs.LightDef] = []
+	for l in lights:
+		if light_board(l) == board_id:
+			on_board.append(l)
+	var order := {}   # light -> position in the config, so the sort is stable
+	for n in on_board.size():
+		order[on_board[n]] = n
+	on_board.sort_custom(func(a: IoDefs.LightDef, b: IoDefs.LightDef) -> bool:
+		return a.count > b.count or (a.count == b.count and order[a] < order[b]))
+	return on_board
 
 
 ## The board's number for an input, or "-" for none.

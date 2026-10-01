@@ -16,13 +16,14 @@ Everything machine-specific comes from the [machine config](configuration.md), s
 - The LED pulses green on each board's `HB` heartbeat (once a second) and goes dark the moment a link is lost. It proves bytes are arriving right now, so a board that crashed but still shows up as a USB device is obvious.
 - The status reads, for example, "Ready: 'main' running (burned)", "Problem on COM9 (see log)" or "Watchdog tripped on 'main'".
 
-**I/O** has one LED per item, grouped **Inputs**, **Coils** and **Lamps**. Each group gets its own card per board if there's more than one board. Each LED shows only its **pin number**, so the whole machine fits in a tight cluster. With a mouse, hovering shows the name. The Hardware tab has all the details.
+**I/O** has one LED per item, grouped **Inputs**, **Coils**, **Lamps** and **Lights**. Each group gets its own card per board if there's more than one board. Each LED shows only its **pin number**, so the whole machine fits in a tight cluster. With a mouse, hovering shows the name. The Hardware tab has all the details.
 
 | LED | Lit amber when |
 |---|---|
 | Input | The switch is active (NO/NC already applied) |
 | Coil | A pulse or hold that Godot sent is running, a rule reports `FIRED`, or a flipper is held (rule armed and its button pressed). A **cyan outline** means the coil's rule is armed |
 | Lamp | ON, or blinking for BLINK |
+| Light | Shows the LED light's current color instead of amber (blinking for BLINK, cycling for RAINBOW). It's numbered with its first LED, since lights have no pin of their own |
 
 Boards don't report their coil outputs, so a coil LED shows what Godot knows. That's close, but it isn't a measurement.
 
@@ -30,7 +31,7 @@ Boards don't report their coil outputs, so a coil LED shows what Godot knows. Th
 
 Every line crossing the link in both directions:
 - Lines sent by Godot are gray and start with `>`. Lines from the board start with `<`. Heartbeats and pings are left out.
-- It also shows every `CFG` exchange, any `ERR`, config problems and board problems. For example: "board runs PINIO 0.1 but this Godot build needs PINIO 0.2: flash Firmware/pinio".
+- It also shows every `CFG` exchange, any `ERR`, config problems and board problems. For example: "board runs PINIO 0.2 but this Godot build needs PINIO 0.3: flash Firmware/pinio".
 
 **Ping** measures the round trip to every linked board. **Clear** empties the log.
 
@@ -51,7 +52,12 @@ Every line crossing the link in both directions:
   - **Armed** turns the coil's rule on the board on or off (`RULE <n> ON/OFF`). It never fires the coil itself; see [Architecture](architecture.md). With the flipper armed, holding its button makes the board fire, drop to hold on EOS, and release, all by itself.
   - The **←/→ keys** fire the first two coils (desktop bench testing only).
 - **Switches**: a live lamp, name, pin and details for each switch, plus **Edit** (name, pin, NO/NC, debounce, kind, points, sound) and **Delete**.
-- **Lamps**: one button per lamp that cycles OFF → ON → BLINK. Lighting will become WS2812B LED chains later.
+- **LED chains**: one row per WS2812B strip (data pin, LED count, color order, how many lights), with **+ Add chain**, **Edit** and **Delete**. A chain with lights on it can't be deleted.
+- **Lights**: named LED ranges on the chains (an insert is one LED).
+  - **Brightness** sets every chain's brightness. It's a power cap too, saved on this machine.
+  - Each light row shows its chain, LEDs and current effect. **Test** runs a rainbow (press again for off), and **Edit** opens the light editor, whose **Try it** row runs any effect with any colors on the real LEDs.
+  - **All off** turns every light off. See [Lighting](lighting.md).
+- **Lamps**: one button per plain on/off lamp output (`CFG LAMP`) that cycles OFF → ON → BLINK.
 - **Layout**: **Reset to default layout**, and the path of the layout file in use.
 
 ## Audio & Video
@@ -63,6 +69,8 @@ Every line crossing the link in both directions:
 - **Media**: what's in `assets/` on this machine.
   - The **Music** dropdown with **Play** / **Stop**.
   - The **Video** dropdown with **Play**. It plays full screen on top of the menu, and a tap stops it. Use it for the Pi cutscene test.
-  - **Rescan** picks up files synced in since startup.
+  - The **Show** dropdown with **Play** / **Stop**: a light show and its song together.
+  - **Light sync** moves light shows later (right) or earlier (left) than the sound, by up to 300 ms, to match this machine.
+  - **Rescan** picks up files and shows synced in since startup.
 
-  See [Audio, music and video](audio-video.md).
+  See [Audio, music and video](audio-video.md) and [Lighting](lighting.md).

@@ -36,6 +36,7 @@ Start in [`Docs/README.md`](Docs/README.md) for the full set. Highlights:
 - [Serial protocol](Docs/serial-protocol.md) — the wire protocol, with an example session.
 - [Service menu](Docs/service-menu.md) — the Monitor, Hardware and Audio & Video tabs, control by control.
 - [Audio, music and video](Docs/audio-video.md) — sounds, the music manager, cutscenes, and syncing media (not in git) to the Pi.
+- [Lighting](Docs/lighting.md) — WS2812B LED chains, effects, and light shows synced to music or video.
 - [Deploying to a Raspberry Pi](Docs/raspberry-pi.md) — from imaging the SD card to a working bench test (desktop icons, sound setup, troubleshooting), up to a full kiosk build.
 
 ## Repo layout
@@ -56,7 +57,7 @@ res://
 ├── control.tscn               # diagnostics/test panel scene (the service page for now)
 ├── test_panel.gd
 └── Firmware/
-    └── pinio/                      # PINIO 0.2 generic, configurable firmware (Arduino IDE + Teensyduino)
+    └── pinio/                      # PINIO 0.3 generic, configurable firmware + WS2812B LED engine (Arduino IDE + Teensyduino)
 ```
 
 ## Getting started
@@ -99,7 +100,7 @@ Plain ASCII, one message per line, ending in `\n`. Full message tables (Teensy�
 ## Roadmap
 
 1. ✅ Serial link, test sketch, `PinballIO` autoload, diagnostics panel.
-2. Configurable I/O (in progress): ✅ always-loaded base scene, ✅ generic PINIO 0.2 firmware with the configurable coil rule (flippers, slings, pops), ✅ machine config + name-based `PinballIO`, ✅ burn layout to board, ✅ service menu (Monitor / Hardware / Audio & Video) with the coil wizard. Next: several boards at once, WS2812B LED chains for lighting, and Arduino Uno support.
+2. Configurable I/O (in progress): ✅ always-loaded base scene, ✅ generic PINIO firmware with the configurable coil rule (flippers, slings, pops), ✅ machine config + name-based `PinballIO`, ✅ burn layout to board, ✅ service menu (Monitor / Hardware / Audio & Video) with the coil wizard, ✅ WS2812B LED chains with board-drawn effects and light shows synced to music/video. Next: several boards at once and Arduino Uno support.
 3. Game state skeleton: attract → game start → ball in play → drain → next ball → game over, enabling/disabling hardware rules per state.
 4. Real playfield layout in the machine config.
 5. Audio, video, and a score display in Godot. Video cutscenes need validating on real Pi 4 hardware before much production time goes into them — see "Deploying to a Raspberry Pi" above.

@@ -15,6 +15,7 @@ The running **mode** decides. The engine only provides the calls.
 - **Game events** play these names if the files exist: `game_start`, `ball_start`, `drain`, `extra_ball`, `game_over`.
 - **Music**: each mode screen picks its track when it starts. `modes/attract.gd` plays `attract` and `modes/game_play.gd` plays `game`. Swapping screens crossfades between them.
 - **Anything else** is plain calls from mode code: `Media.play_sfx(&"jackpot")`, `Media.play_video(&"wizard_intro")`.
+- **Light shows** follow the same naming: a show in `assets/shows/` with the same name as a song or video runs along with it. See [Lighting](lighting.md).
 
 ## The Media calls
 
@@ -47,11 +48,48 @@ The **Audio & Video** tab of the service menu has:
 
 - **Short sound effects**: `.wav`. They start instantly, with nothing to decode.
 - **Longer sounds and music**: `.ogg` or `.mp3`. These are streamed, so a long song doesn't sit in memory.
-- **Video**: Godot core only plays **Ogg Theora, `.ogv`**, decoded in software. Convert with [ffmpeg](https://ffmpeg.org/):
-  ```sh
-  ffmpeg -i clip.mp4 -vf "scale=1280:-2,fps=30" -c:v libtheora -q:v 7 -c:a libvorbis -q:a 4 clip.ogv
-  ```
-  The Pi's CPU does all of that decoding. **Before making lots of cutscenes, play one real clip on the Pi** and check the frame rate and CPU use (see [Raspberry Pi: the open risk](raspberry-pi.md#the-open-risk-video-cutscenes)). If it struggles, lower the resolution or frame rate first.
+- **Video**: Godot core only plays **Ogg Theora, `.ogv`**, decoded in software by the Pi's CPU. No editor exports it, so make videos as below. The video keeps its shape: a 16:9 clip on the 5:3 bench screen gets thin black bars instead of being squashed.
+
+## Making videos (DaVinci Resolve → .ogv)
+
+Resolve can't export Theora, so it takes two steps: export a normal high-quality file, then convert it with the free tool ffmpeg.
+
+**1. Resolve project settings** (set before you edit): timeline **1280×720** (the game's layout size), **30 fps**. Lower frame rates are less work for the Pi, and 60 isn't worth it.
+
+**2. Export** on the **Deliver** page with **Custom Export**:
+
+| Setting | Value |
+|---|---|
+| Format / Codec | MP4 / H.264. QuickTime / DNxHR HQ loses less, but the files are much bigger |
+| Resolution / Frame rate | 1280×720, 30 |
+| Quality | High, e.g. "Restrict to" about 20,000 Kb/s. This is only an intermediate file |
+| Audio | On. AAC for MP4 or Linear PCM for QuickTime, 48 kHz stereo |
+
+Keep these exports **outside** `assets/`, so they don't get synced to the Pi, e.g. `D:\Videos\resolve_exports`.
+
+**3. Convert.** Install ffmpeg once in PowerShell with `winget install Gyan.FFmpeg`, then open a new PowerShell window. `tools/convert_videos.ps1` converts a file, or every video in a folder, into `assets/video/` with Pi-friendly settings. It skips files that are already up to date:
+
+```sh
+.\tools\convert_videos.ps1 -Source D:\Videos\resolve_exports
+```
+
+The file name becomes the video's name in the game: `intro.mp4` → `assets/video/intro.ogv` → `Media.play_video(&"intro")`. The same thing by hand:
+
+```sh
+ffmpeg -i intro.mp4 -vf "scale=-2:720,fps=30" -c:v libtheora -q:v 7 -g 30 -pix_fmt yuv420p -c:a libvorbis -q:a 5 intro.ogv
+```
+
+The script's settings:
+- `-q:v` / `-Quality`: video quality 0–10. 6–8 is the useful range, and lower means a smaller file that's easier on the Pi.
+- `-g 30`: a keyframe every second, so playback and skipping stay smooth.
+
+**4. Test on the Pi before making lots of cutscenes.** Sync the file, restart the game, then go to Service → **Audio & Video** → **Media** → **Video** → **Play**, and watch for stutter. `top` over SSH shows the CPU use. If it struggles, convert at 480 lines. That's close to the 800×480 bench screen anyway, and much less work for the Pi:
+
+```sh
+.\tools\convert_videos.ps1 -Source D:\Videos\resolve_exports -Height 480 -Force
+```
+
+See also [Raspberry Pi: the open risk](raspberry-pi.md#the-open-risk-video-cutscenes).
 
 ## Getting media from the PC to the Pi
 

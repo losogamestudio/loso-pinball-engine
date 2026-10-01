@@ -37,6 +37,7 @@ func _run() -> void:
 	await _test_name_and_pin_rules()
 	await _test_rename_switch_follows_coils()
 	await _test_switch_kind()
+	await _test_light_editor()
 
 	_config.restore(saved_layout, false)
 	print("\n%s" % ("ALL PASSED" if _failures == 0 else "%d FAILURE(S)" % _failures))
@@ -218,5 +219,29 @@ func _test_switch_kind() -> void:
 	editor._cancel()
 	await _frames()
 	_check((_config.find_input(&"flipper_left_eos") as IoDefs.InputDef).kind == "switch", "Cancel restores the kind")
+	editor.queue_free()
+	await _frames()
+
+func _test_light_editor() -> void:
+	var editor: Control = load("res://config/light_editor.gd").new()
+	editor.open(&"")
+	root.add_child(editor)
+	await _frames()
+	_check(editor._draft.chain == &"led_chain_0" and editor._draft.name == &"light", "new light starts on the first chain")
+	editor._draft.name = &"insert_5"
+	editor._draft.first = 5
+	editor._refresh()
+	_check(editor._draft_error() == "", "a 1-LED light at LED 5 is valid")
+	editor._draft.first = 30
+	_check(editor._draft_error().contains("don't fit"), "a light past the end of the chain is refused")
+	editor._draft.first = 5
+	editor._try_on_board()
+	await _frames()
+	var plan: IoDefs.BoardPlan = _config.build_plan(_config.boards[0])
+	_check(_config.find_light(&"insert_5") != null and plan.lines.has("CFG ZONE 2 0 5 1"),
+			"the new light goes to the board as zone 2 (after the bigger lights)")
+	editor._cancel()
+	await _frames()
+	_check(_config.find_light(&"insert_5") == null and _config.lights.size() == 2, "Cancel removes the new light again")
 	editor.queue_free()
 	await _frames()

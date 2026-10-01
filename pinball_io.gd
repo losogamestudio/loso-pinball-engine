@@ -6,6 +6,7 @@ extends Node
 ##     PinballIO.switch_changed.connect(_on_switch)     # (name, active)
 ##     PinballIO.set_coil_rule(&"flipper_left", true)   # arm a flipper
 ##     PinballIO.pulse_coil(&"kickout")                 # fire a coil once
+##     PinballIO.set_light(&"shoot_again", "BLINK", Color.ORANGE, 250)   # LED effect
 ##
 ## What happens underneath: open a port → the board answers HELLO with its
 ## type and serial number → we match it to a board in MachineConfig → push that
@@ -28,6 +29,8 @@ signal coil_fired(coil_name: StringName)        ## a coil rule fired on its boar
 ## Godot sent a coil command: a PULSE (on = true, it ends by itself) or HOLD ON/OFF.
 ## For displays like the Monitor tab; the board doesn't report coil outputs.
 signal coil_commanded(coil_name: StringName, on: bool, is_pulse: bool)
+## A light's wanted effect changed (set_light / all_lights_off). For displays like the Monitor tab.
+signal light_changed(light_name: StringName)
 signal watchdog_changed(board_id: StringName, tripped: bool)
 signal latency_measured(port: String, ms: float)
 signal heartbeat(port: String, millis: int)     ## board's HB, once per second while linked
@@ -44,6 +47,7 @@ var switches := {}
 ## Persisted settings (loaded in _ready, saved via set_auto_connect / on first link).
 var auto_connect := false                ## if true, try last_port automatically at startup
 var last_port := ""                      ## most recent port a board answered on
+var light_brightness := 0.5              ## LED chain brightness 0..1 (a power cap), see set_light_brightness
 
 var _serial: GdSerialManager
 var _links := {}                         ## port -> BoardLink, for every open port
@@ -53,6 +57,8 @@ var _coil_routes := {}                   ## coil name -> Route (only while its b
 var _lamp_routes := {}                   ## lamp name -> Route
 var _rule_wanted := {}                   ## coil name -> bool, what game code asked for
 var _lamp_wanted := {}                   ## lamp name -> "ON"/"OFF"/"BLINK"
+var _light_routes := {}                  ## light name -> Route (index = the board's zone number)
+var _light_wanted := {}                  ## light name -> {effect, color, ms, color2}
 
 
 ## Where a coil or lamp lives: which link, and its number on that board.
@@ -95,7 +101,13 @@ func open_port(port: String) -> bool:
 	if not _serial.open(port, BAUD, 100):   # MODE_RAW: BoardLink does its own line splitting
 		push_warning("PinballIO: could not open " + port)
 		return false
-	var link := BoardLink.new(port, _write.bind(port))
+	_attach_link(BoardLink.new(port, _write.bind(port)))
+	return true
+
+
+## Hook up a link's signals and start it. (Tests use this with a fake board.)
+func _attach_link(link: BoardLink) -> void:
+	var port := link.port_name
 	# bind() tacks the link onto each signal's arguments, so one handler
 	# can serve every board.
 	link.linked.connect(_on_link_linked.bind(link))
@@ -112,7 +124,6 @@ func open_port(port: String) -> bool:
 	link.line_received.connect(func(line: String) -> void: line_received.emit(port, line))
 	_links[port] = link
 	link.start()
-	return true
 
 
 ## Close one port, or every port if [param port] is empty.
@@ -190,12 +201,14 @@ func _load_settings() -> void:
 		return   # no settings file yet (first run) — defaults stand
 	auto_connect = cfg.get_value("serial", "auto_connect", false)
 	last_port = cfg.get_value("serial", "last_port", "")
+	light_brightness = cfg.get_value("lights", "brightness", 0.5)
 
 
 func _save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("serial", "auto_connect", auto_connect)
 	cfg.set_value("serial", "last_port", last_port)
+	cfg.set_value("lights", "brightness", light_brightness)
 	cfg.save(SETTINGS_PATH)
 
 
@@ -261,6 +274,56 @@ func set_lamp(lamp_name: StringName, mode: String) -> void:
 
 func get_lamp_mode(lamp_name: StringName) -> String:
 	return _lamp_wanted.get(lamp_name, "OFF")
+
+
+## Run an effect on a light (an LED range from the machine config). The board
+## draws it by itself until told otherwise. Remembered like lamps.
+##   effect: one of IoDefs.EFFECTS ("SOLID", "BLINK", "PULSE", "CHASE", ...)
+##   ms:     period, or the duration for FADE / WIPE
+##   color2: the second color for BLINK / CHASE / WIPE / SPARKLE
+## Example: PinballIO.set_light(&"shoot_again", "BLINK", Color.ORANGE, 250)
+func set_light(light_name: StringName, effect: String, color := Color.WHITE, ms := 500, color2 := Color.BLACK) -> void:
+	if effect not in IoDefs.EFFECTS:
+		push_warning("PinballIO: bad light effect '%s'" % effect)
+		return
+	if MachineConfig.find_light(light_name) == null:
+		push_warning("PinballIO: no light named '%s'" % light_name)
+		return
+	_light_wanted[light_name] = {"effect": effect, "color": color, "ms": clampi(ms, 1, 600000), "color2": color2}
+	var r: Route = _light_routes.get(light_name)
+	if r:
+		r.link.send(_fx_line(r.index, _light_wanted[light_name]))
+	light_changed.emit(light_name)
+
+
+## What a light was last told: {effect, color, ms, color2}. Effect "OFF" if never set.
+func get_light(light_name: StringName) -> Dictionary:
+	return _light_wanted.get(light_name, {"effect": "OFF", "color": Color.BLACK, "ms": 500, "color2": Color.BLACK})
+
+
+## Every light off (e.g. when a light show stops).
+func all_lights_off() -> void:
+	for l in MachineConfig.lights:
+		if get_light(l.name)["effect"] != "OFF":
+			set_light(l.name, "OFF")
+
+
+## LED brightness for every chain, 0..1. It's a power cap as much as a look:
+## a strip at full white draws about 60 mA per LED. Saved on this machine.
+func set_light_brightness(level: float) -> void:
+	light_brightness = clampf(level, 0.0, 1.0)
+	_save_settings()
+	for port: String in _ready_ports:
+		(_links[port] as BoardLink).send(_bright_line())
+
+
+func _fx_line(index: int, want: Dictionary) -> String:
+	return "FX %d %s %s %d %s" % [index, want["effect"], (want["color"] as Color).to_html(false).to_upper(),
+			want["ms"], (want["color2"] as Color).to_html(false).to_upper()]
+
+
+func _bright_line() -> String:
+	return "BRIGHT %d" % roundi(light_brightness * 255.0)
 
 
 func is_switch_active(switch_name: StringName) -> bool:
@@ -381,6 +444,8 @@ func _on_link_configured(link: BoardLink) -> void:
 		_coil_routes[plan.coil_names[i]] = Route.new(link, i)
 	for i in plan.lamp_names.size():
 		_lamp_routes[plan.lamp_names[i]] = Route.new(link, i)
+	for i in plan.light_names.size():
+		_light_routes[plan.light_names[i]] = Route.new(link, i)
 	_ready_ports[link.port_name] = true
 	_resend_outputs(link)
 	if link.running_fingerprint != plan.fingerprint:
@@ -449,7 +514,7 @@ func _on_config_changed() -> void:
 # ---------------------------------------------------------------- helpers
 
 ## After a (re)config or watchdog recovery the board has every rule disarmed
-## and every lamp off. Re-send whatever game code currently wants.
+## and every lamp and light off. Re-send whatever game code currently wants.
 func _resend_outputs(link: BoardLink) -> void:
 	var plan: IoDefs.BoardPlan = _plans.get(link.port_name)
 	if plan == null or not link.is_configured:
@@ -461,6 +526,12 @@ func _resend_outputs(link: BoardLink) -> void:
 		var mode: String = _lamp_wanted.get(plan.lamp_names[i], "OFF")
 		if mode != "OFF":
 			link.send("LED %d %s" % [i, mode])
+	if not plan.chain_names.is_empty():
+		link.send(_bright_line())
+	for i in plan.light_names.size():
+		var want := get_light(plan.light_names[i])
+		if want["effect"] != "OFF":
+			link.send(_fx_line(i, want))
 
 
 func _unbind(port: String) -> void:
@@ -471,6 +542,8 @@ func _unbind(port: String) -> void:
 		_coil_routes.erase(coil_name)
 	for lamp_name in plan.lamp_names:
 		_lamp_routes.erase(lamp_name)
+	for light_name in plan.light_names:
+		_light_routes.erase(light_name)
 	for input_name in plan.input_names:
 		switches.erase(input_name)
 	_plans.erase(port)

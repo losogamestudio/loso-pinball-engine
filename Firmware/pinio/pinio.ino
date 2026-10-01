@@ -1,6 +1,8 @@
 /*
-  PINIO 0.2  —  generic pinball I/O firmware
+  PINIO 0.3  —  generic pinball I/O firmware
   ------------------------------------------
+  Needs the OctoWS2811 library, which comes with Teensyduino (for the LED chains).
+
   The board owns timing + safety, Godot owns rules + presentation.
 
   Unlike the 0.1 test sketch, nothing about the playfield is hard-coded here.
@@ -16,7 +18,17 @@
       CFG COIL 1 26 30 0 2 - 100       coil 1 = pin 26, 30 ms pulse, trigger = input 2,
                                        no EOS, 100 ms recycle  (a slingshot)
       CFG LAMP 0 27                    lamp 0 = pin 27
-      CFG DONE                         -> ACK CFG <inputs> <coils> <lamps> <hash>, then SWS
+      CFG CHAIN 0 8 30 GRB             LED chain 0 = WS2812B strip on pin 8, 30 LEDs, GRB order
+      CFG ZONE 0 0 0 30                zone 0 = chain 0, LEDs 0..29 (a named light in Godot)
+      CFG ZONE 1 0 0 1                 zone 1 = chain 0, LED 0 only (an insert)
+      CFG DONE                         -> ACK CFG <inputs> <coils> <lamps> <chains> <zones> <hash>, then SWS
+
+  LED effects (all drawn on the board, see leds.h):
+      FX 0 RAINBOW 000000 3000         zone 0: rainbow, one cycle every 3 s
+      FX 1 BLINK FF0000 250 000000     zone 1: red / black, 250 ms each
+      FX ALL OFF                       every zone off
+    Effects: OFF SOLID BLINK PULSE CHASE WIPE FADE RAINBOW SPARKLE.
+    Colors are RRGGBB hex; defaults FFFFFF, 500 ms, 000000.
 
   Storing the layout ("burning" it):
     CFG SAVE writes the current layout into EEPROM. At power-up the board
@@ -38,7 +50,7 @@
   Protocol: plain text, one message per line ending in '\n'.
 
   Board -> Godot
-    HELLO PINIO 0.2 <board> <uid> <running_hash|-> <saved_hash|->   reply to HELLO
+    HELLO PINIO 0.3 <board> <uid> <running_hash|-> <saved_hash|->   reply to HELLO
     SWS <bits>                      all input states (after CFG DONE, or when asked)
     SW <in> <0|1>                   debounced input change
     FIRED <coil>                    a pulse-type coil rule fired locally
@@ -52,7 +64,7 @@
     HELLO                           start/restart link: outputs off, rules disarmed,
                                     config KEPT, arms watchdog
     HB                              heartbeat (any line counts)
-    CFG CLEAR | PWM | IN | COIL | LAMP | DONE     configuration, see above
+    CFG CLEAR | PWM | IN | COIL | LAMP | CHAIN | ZONE | DONE     configuration, see above
     CFG SAVE                        store the running layout in EEPROM (outputs go off)
     CFG ERASE                       forget the stored layout
     SWS                             ask for all input states
@@ -60,6 +72,8 @@
     HOLD <coil> <ON|OFF>            full power for full_ms, then hold until OFF
     RULE <coil|ALL> <ON|OFF>        arm/disarm trigger rules
     LED <lamp> <ON|OFF|BLINK>       lamp control
+    FX <zone|ALL> <effect> [RRGGBB] [ms] [RRGGBB2]   LED zone effect
+    BRIGHT <0..255>                 LED brightness for every chain (default 128)
     PING <n>                        round-trip latency test
     WD <ON|OFF>                     watchdog on/off (Serial Monitor testing only)
 
@@ -77,7 +91,11 @@
   #error "PINIO: unsupported board. Select Teensy 4.1 under Tools > Board (Uno support is planned)."
 #endif
 
-const char* FIRMWARE = "PINIO 0.2";
+#if BOARD_HAS_LEDS
+  #include "leds.h"
+#endif
+
+const char* FIRMWARE = "PINIO 0.3";
 
 // ---------------- Limits and timing ----------------
 const uint32_t WATCHDOG_MS      = 500;    // nothing from Godot this long -> outputs off
@@ -289,11 +307,17 @@ void allOutputsOff() {
     lamps[i].mode = LAMP_OFF;
     digitalWrite(lamps[i].pin, LOW);
   }
+#if BOARD_HAS_LEDS
+  ledsAllOff();   // LED zones too; the next frame sends black
+#endif
 }
 
 // Forget the whole configuration and drive every output pin low.
 void clearConfig() {
   allOutputsOff();
+#if BOARD_HAS_LEDS
+  ledsClearConfig();   // before the pin loop below: gives the chain pins back to normal GPIO
+#endif
   memset(inputs, 0, sizeof(inputs));
   memset(coils, 0, sizeof(coils));
   memset(lamps, 0, sizeof(lamps));
@@ -494,6 +518,16 @@ bool parseInputRef(const char* s, int8_t& out) {
   return true;
 }
 
+// A color as 6 hex digits, RRGGBB (e.g. FF8000 = orange).
+bool parseColor(const char* s, uint32_t& out) {
+  if (!s || strlen(s) != 6) return false;
+  char* end;
+  unsigned long v = strtoul(s, &end, 16);
+  if (*end != '\0') return false;
+  out = v;
+  return true;
+}
+
 bool pinHas(long pin, uint8_t cap) {
   return pin >= 0 && pin < NUM_PINS && (PIN_CAPS[pin] & cap) == cap;
 }
@@ -644,12 +678,53 @@ void handleCfg(char** tok, uint8_t n, uint32_t now) {
     out->print("ACK CFG LAMP ");
     out->println(id);
 
+  } else if (!strcmp(sub, "CHAIN")) {
+    // CFG CHAIN <chain> <pin> <count> <order>
+#if BOARD_HAS_LEDS
+    long id, pin, count;
+    if (n != 6) { cfgFail("CHAIN needs <chain> <pin> <count> <order>"); return; }
+    if (!parseNum(tok[2], 0, MAX_CHAINS - 1, id)) { cfgFail("bad chain index"); return; }
+    if (!cfgCheckPin(tok[3], CAP_OUT, pin)) return;
+    if (!parseNum(tok[4], 1, MAX_LEDS_PER_CHAIN, count)) { cfgFail("LED count must be 1..300"); return; }
+    const char* why = ledsDefineChain(id, pin, count, tok[5]);
+    if (why) { cfgFail(why); return; }
+    pinUsed[pin] = true;
+    if (!cfgAccept()) return;
+    out->print("ACK CFG CHAIN ");
+    out->println(id);
+#else
+    cfgFail("this board has no LED chain support");
+#endif
+
+  } else if (!strcmp(sub, "ZONE")) {
+    // CFG ZONE <zone> <chain> <first> <count>
+#if BOARD_HAS_LEDS
+    long id, chain, first, count;
+    if (n != 6 || !parseNum(tok[2], 0, MAX_ZONES - 1, id) || !parseNum(tok[3], 0, MAX_CHAINS - 1, chain)
+        || !parseNum(tok[4], 0, MAX_LEDS_PER_CHAIN - 1, first) || !parseNum(tok[5], 1, MAX_LEDS_PER_CHAIN, count)) {
+      cfgFail("ZONE needs <zone> <chain> <first> <count>");
+      return;
+    }
+    const char* why = ledsDefineZone(id, chain, first, count);
+    if (why) { cfgFail(why); return; }
+    if (!cfgAccept()) return;
+    out->print("ACK CFG ZONE ");
+    out->println(id);
+#else
+    cfgFail("this board has no LED chain support");
+#endif
+
   } else if (!strcmp(sub, "DONE")) {
     if (cfgError) { out->println("ERR CFG has errors, send CFG CLEAR and start over"); return; }
-    uint8_t nIn = 0, nCoil = 0, nLamp = 0;
+    uint8_t nIn = 0, nCoil = 0, nLamp = 0, nChain = 0, nZone = 0;
     for (uint8_t i = 0; i < MAX_INPUTS; i++) nIn += inputs[i].defined;
     for (uint8_t i = 0; i < MAX_COILS; i++)  nCoil += coils[i].defined;
     for (uint8_t i = 0; i < MAX_LAMPS; i++)  nLamp += lamps[i].defined;
+#if BOARD_HAS_LEDS
+    nChain = ledChainCount;
+    nZone  = ledsZoneCount();
+    ledsStart();
+#endif
     configured = true;
     out->print("ACK CFG ");
     out->print(nIn);
@@ -658,12 +733,16 @@ void handleCfg(char** tok, uint8_t n, uint32_t now) {
     out->print(' ');
     out->print(nLamp);
     out->print(' ');
+    out->print(nChain);
+    out->print(' ');
+    out->print(nZone);
+    out->print(' ');
     printHash(true, cfgHash);
     out->println();
     sendAllSwitches();
 
   } else {
-    out->println("ERR CFG needs CLEAR, PWM, IN, COIL, LAMP, DONE, SAVE or ERASE");
+    out->println("ERR CFG needs CLEAR, PWM, IN, COIL, LAMP, CHAIN, ZONE, DONE, SAVE or ERASE");
   }
 }
 
@@ -794,6 +873,40 @@ void handleLine(char* line, uint32_t now) {
     out->print(' ');
     out->println(tok[2]);
 
+#if BOARD_HAS_LEDS
+  } else if (!strcmp(cmd, "FX")) {
+    // FX <zone|ALL> <effect> [RRGGBB] [ms] [RRGGBB2]
+    if (n < 3) { out->println("ERR FX needs <zone|ALL> <effect> [RRGGBB] [ms] [RRGGBB2]"); return; }
+    int effect = ledsEffectFromName(tok[2]);
+    if (effect < 0) { out->println("ERR bad effect"); return; }
+    uint32_t c1 = 0xFFFFFF, c2 = 0;
+    long ms = 500;
+    if (n > 3 && !parseColor(tok[3], c1)) { out->println("ERR bad color, use RRGGBB"); return; }
+    if (n > 4 && !parseNum(tok[4], 1, 600000, ms)) { out->println("ERR bad ms"); return; }
+    if (n > 5 && !parseColor(tok[5], c2)) { out->println("ERR bad color2, use RRGGBB"); return; }
+    if (!strcmp(tok[1], "ALL")) {
+      for (uint8_t i = 0; i < MAX_ZONES; i++) {
+        if (zones[i].defined) ledsSetZone(zones[i], (LedEffect)effect, c1, ms, c2, now);
+      }
+    } else {
+      long id;
+      if (!parseNum(tok[1], 0, MAX_ZONES - 1, id) || !zones[id].defined) { out->println("ERR bad zone"); return; }
+      ledsSetZone(zones[id], (LedEffect)effect, c1, ms, c2, now);
+    }
+    out->print("ACK FX ");
+    out->print(tok[1]);
+    out->print(' ');
+    out->println(tok[2]);
+
+  } else if (!strcmp(cmd, "BRIGHT")) {
+    // BRIGHT <0..255>
+    long level;
+    if (n < 2 || !parseNum(tok[1], 0, 255, level)) { out->println("ERR BRIGHT needs <0..255>"); return; }
+    ledBrightness = level;
+    out->print("ACK BRIGHT ");
+    out->println(level);
+#endif
+
   } else {
     out->print("ERR unknown command ");
     out->println(cmd);
@@ -838,6 +951,9 @@ void loop() {
   if (configured) scanInputs(now);
   updateCoils(now);
   updateLamps(now);
+#if BOARD_HAS_LEDS
+  ledsUpdate(now);   // draws + starts sending a frame about every 16 ms; never waits
+#endif
   updateStatusLed(now);
   checkWatchdog(now);
   heartbeatOut(now);

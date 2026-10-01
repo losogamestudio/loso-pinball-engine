@@ -6,7 +6,7 @@
 //
 // Pin plan, looking at the Teensy with the USB port at the top:
 //
-//   LEFT side  (0..12, then 24..32)  = OUTPUTS (coils, lamps)
+//   LEFT side  (0..12, then 24..32)  = OUTPUTS (coils, lamps, WS2812B LED chains)
 //   RIGHT side (23..13, then 41..33) = INPUTS  (switches)
 //
 //   Pin(s)                     Role
@@ -38,9 +38,18 @@ const uint8_t MAX_INPUTS = 24;
 const uint8_t MAX_COILS  = 24;
 const uint8_t MAX_LAMPS  = 24;
 
-// Room for the layout text that CFG SAVE burns into EEPROM. A full layout
-// (24 + 24 + 24 items) is under 3 KB; the Teensy 4.1 has 4284 bytes of EEPROM.
-const uint16_t CFG_TEXT_MAX = 3072;
+// WS2812B LED chains (see leds.h). Any output pin can drive a chain: the
+// OctoWS2811 library sends all chains at once by DMA, so drawing LEDs never
+// delays switch scanning or coil timing.
+#define BOARD_HAS_LEDS 1
+const uint8_t  MAX_CHAINS         = 4;
+const uint16_t MAX_LEDS_PER_CHAIN = 300;
+const uint8_t  MAX_ZONES          = 96;   // named lights: strips, sections, single inserts
+
+// Room for the layout text that CFG SAVE burns into EEPROM: the Teensy 4.1
+// has 4284 bytes of EEPROM, minus the 10-byte header in front of the text.
+// Roughly 24 inputs + 24 coils + 4 chains + 96 lights fit.
+const uint16_t CFG_TEXT_MAX = 4200;
 
 // Board-wide PWM frequency for coil hold. 20 kHz is above hearing range, so
 // holding flippers don't whine. Godot can change it with CFG PWM <hz>.

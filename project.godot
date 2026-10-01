@@ -21,6 +21,7 @@ MachineConfig="*res://config/machine_config.gd"
 PinballIO="*res://pinball_io.gd"
 Game="*res://game/game.gd"
 Media="*res://media/media.gd"
+Shows="*res://media/shows.gd"
 
 [display]
 
