@@ -11,14 +11,22 @@ extends Node
 ## has the same name, that show runs along with it, and stops with it. Game
 ## code can also call play_show(name) directly.
 ##
+## Show preview: with set_preview_listening(true) (the Audio & Video tab), the
+## game also takes light cues over UDP from the editor's Light Show dock
+## (addons/loso_show_tools), so the real LEDs follow the timeline while you
+## scrub or play a show in the editor. See ShowCues for the few text lines.
+##
 ## Register under Project Settings > Globals > Autoload as "Shows", below Media.
 
 signal show_started(show_name: StringName)
 signal show_finished(show_name: StringName)
+## The editor started (or stopped) sending preview cues. peer = "ip:port", or "" when it stopped.
+signal preview_changed(peer: String)
 
 const SHOWS_DIR := "res://assets/shows"
-const ANIMATION_NAME := &"show"
-const CUE_METHOD := &"cue"
+const ANIMATION_NAME := ShowCues.ANIMATION_NAME
+const PREVIEW_PORT := ShowCues.PREVIEW_PORT
+const PREVIEW_TIMEOUT_MS := 3000   ## no line from the editor for this long = preview over
 const SETTINGS_PATH := "user://audio.cfg"   ## shared with Media's volumes
 const MAX_SYNC_OFFSET_MS := 300
 
@@ -28,6 +36,11 @@ var sync_offset_ms := 0
 
 ## Tests can replace the clock: a Callable returning seconds (or -1 = paused).
 var clock_override := Callable()
+
+## Listening for the editor's show preview (saved on this machine, off by default).
+var preview_listening := false
+## Who's previewing now ("ip:port"), or "" when nobody is.
+var preview_peer := ""
 
 var _library := {}   ## show name -> scene path
 var _cue_cache := {}  ## show name -> ShowData
@@ -39,6 +52,8 @@ var _last_position := 0.0
 var _started_ms := 0           ## for sync_to "none"
 var _touched := {}             ## lights this show has set, turned off when it stops
 var _warned := {}
+var _preview_udp: PacketPeerUDP   ## open while preview_listening
+var _preview_last_ms := 0
 
 
 ## Everything read from one show scene.
@@ -54,6 +69,7 @@ func _ready() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_PATH)
 	sync_offset_ms = cfg.get_value("lights", "sync_offset_ms", 0)
+	set_preview_listening(cfg.get_value("lights", "preview_listening", false), false)
 	Media.music_changed.connect(_on_music_changed)
 	Media.video_started.connect(_on_video_started)
 	Media.video_finished.connect(_on_video_finished)
@@ -140,6 +156,7 @@ func set_sync_offset(ms: int) -> void:
 
 
 func _process(_delta: float) -> void:
+	_poll_preview()
 	if _show == null:
 		return
 	var position := _clock()
@@ -232,7 +249,7 @@ func _load(show_name: StringName) -> ShowData:
 		var anim := player.get_animation(ANIMATION_NAME)
 		data.length = anim.length
 		data.loops = anim.loop_mode != Animation.LOOP_NONE
-		_read_cues(anim, data)
+		data.cues = ShowCues.read(anim)
 	else:
 		push_warning("Shows: %s needs an AnimationPlayer with an animation named \"show\"" % _library[show_name])
 	root.free()
@@ -240,22 +257,74 @@ func _load(show_name: StringName) -> ShowData:
 	return data
 
 
-## Every cue(...) key on the animation's Call Method tracks, sorted by time.
-func _read_cues(anim: Animation, data: ShowData) -> void:
-	for track in anim.get_track_count():
-		if anim.track_get_type(track) != Animation.TYPE_METHOD or not anim.track_is_enabled(track):
-			continue
-		for key in anim.track_get_key_count(track):
-			if anim.method_track_get_name(track, key) != CUE_METHOD:
-				continue
-			var args: Array = anim.method_track_get_params(track, key)
-			# Fill in anything left out, with the same defaults as LightShow.cue().
-			data.cues.append({
-				"time": anim.track_get_key_time(track, key),
-				"light": StringName(args[0]) if args.size() > 0 else &"",
-				"effect": str(args[1]) if args.size() > 1 and str(args[1]) != "" else "SOLID",
-				"color": args[2] if args.size() > 2 and args[2] is Color else Color.WHITE,
-				"ms": int(args[3]) if args.size() > 3 and int(args[3]) > 0 else 500,
-				"color2": args[4] if args.size() > 4 and args[4] is Color else Color.BLACK,
-			})
-	data.cues.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["time"] < b["time"])
+# ---------------------------------------------------------------- show preview from the editor
+
+## Start or stop listening for the editor's Light Show dock on PREVIEW_PORT (UDP).
+## remember = save the choice on this machine (user://audio.cfg).
+func set_preview_listening(on: bool, remember := true) -> void:
+	if remember:
+		var cfg := ConfigFile.new()
+		cfg.load(SETTINGS_PATH)
+		cfg.set_value("lights", "preview_listening", on)
+		cfg.save(SETTINGS_PATH)
+	if on == (_preview_udp != null):
+		return
+	if on:
+		_preview_udp = PacketPeerUDP.new()
+		var err := _preview_udp.bind(PREVIEW_PORT)
+		if err != OK:
+			push_warning("Shows: can't listen for the show preview on UDP port %d (error %d). Is another copy of the game running?" % [PREVIEW_PORT, err])
+			_preview_udp = null
+			preview_listening = false
+			return
+	else:
+		_preview_udp.close()
+		_preview_udp = null
+		_end_preview()
+	preview_listening = on
+
+
+## Is the editor sending preview cues right now?
+func is_previewing() -> bool:
+	return preview_peer != ""
+
+
+func _poll_preview() -> void:
+	if _preview_udp == null:
+		return
+	while _preview_udp.get_available_packet_count() > 0:
+		var line := _preview_udp.get_packet().get_string_from_utf8().strip_edges()
+		var ip := _preview_udp.get_packet_ip()
+		var port := _preview_udp.get_packet_port()
+		_preview_last_ms = Time.get_ticks_msec()
+		if "%s:%d" % [ip, port] != preview_peer:
+			preview_peer = "%s:%d" % [ip, port]
+			preview_changed.emit(preview_peer)
+		_handle_preview_line(line, ip, port)
+	if preview_peer != "" and Time.get_ticks_msec() - _preview_last_ms > PREVIEW_TIMEOUT_MS:
+		_end_preview()   # the editor closed or stopped previewing; the lights stay as they are
+
+
+func _handle_preview_line(line: String, ip: String, port: int) -> void:
+	if line == "PING":
+		# Answer with this machine's light names, for the dock's light list.
+		var words := PackedStringArray(["PONG"])
+		for l in MachineConfig.lights:
+			words.append(String(l.name))
+		_preview_udp.set_dest_address(ip, port)
+		_preview_udp.put_packet(" ".join(words).to_utf8_buffer())
+	elif line == "OFF":
+		stop_show()
+		PinballIO.all_lights_off()
+	elif line.begins_with("FX "):
+		var fx := ShowCues.parse_fx(line)
+		if fx.is_empty() or fx["effect"] not in IoDefs.EFFECTS or MachineConfig.find_light(fx["light"]) == null:
+			return   # a light this machine doesn't have: skip it quietly (the dock lists the real ones)
+		stop_show()   # the editor has the lights now
+		PinballIO.set_light(fx["light"], fx["effect"], fx["color"], fx["ms"], fx["color2"])
+
+
+func _end_preview() -> void:
+	if preview_peer != "":
+		preview_peer = ""
+		preview_changed.emit("")

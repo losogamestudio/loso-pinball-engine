@@ -71,6 +71,7 @@ Every line crossing the link in both directions:
   - The **Video** dropdown with **Play**. It plays full screen on top of the menu, and a tap stops it. Use it for the Pi cutscene test.
   - The **Show** dropdown with **Play** / **Stop**: a light show and its song together.
   - **Light sync** moves light shows later (right) or earlier (left) than the sound, by up to 300 ms, to match this machine.
+  - **Show preview from the editor** lets the Godot editor's Light Show dock drive the lights while you edit a show (UDP port 4777; the note shows this machine's IP). Saved on this machine, off by default.
   - **Rescan** picks up files and shows synced in since startup.
 
   See [Audio, music and video](audio-video.md) and [Lighting](lighting.md).

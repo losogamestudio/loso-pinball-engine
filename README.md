@@ -36,7 +36,7 @@ Start in [`Docs/README.md`](Docs/README.md) for the full set. Highlights:
 - [Serial protocol](Docs/serial-protocol.md) — the wire protocol, with an example session.
 - [Service menu](Docs/service-menu.md) — the Monitor, Hardware and Audio & Video tabs, control by control.
 - [Audio, music and video](Docs/audio-video.md) — sounds, the music manager, cutscenes, and syncing media (not in git) to the Pi.
-- [Lighting](Docs/lighting.md) — WS2812B LED chains, effects, and light shows synced to music or video.
+- [Lighting](Docs/lighting.md) — WS2812B LED chains, effects, and light shows synced to music or video, with live LED preview while you edit a show in the Godot editor.
 - [Deploying to a Raspberry Pi](Docs/raspberry-pi.md) — from imaging the SD card to a working bench test (desktop icons, sound setup, troubleshooting), up to a full kiosk build.
 
 ## Repo layout

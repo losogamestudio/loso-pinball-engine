@@ -12,6 +12,7 @@ var _list: VBoxContainer
 var _music_pick: OptionButton
 var _video_pick: OptionButton
 var _show_pick: OptionButton
+var _preview_note: Label
 
 
 func _ready() -> void:
@@ -24,6 +25,7 @@ func _ready() -> void:
 	_list.add_theme_constant_override("separation", 12)
 	scroll.add_child(_list)
 	_rebuild()
+	Shows.preview_changed.connect(_update_preview_note)   # dropped by Godot when this page is freed
 
 
 func _rebuild() -> void:
@@ -186,6 +188,19 @@ func _build_media() -> void:
 	body.add_child(offset_row)
 	body.add_child(UiKit.detail("If the lights run ahead of the music, move it right (later); behind, move it left."))
 
+	# Show preview: the editor's Light Show dock drives the lights while you scrub a show.
+	var preview := CheckBox.new()
+	preview.text = "Show preview from the editor"
+	preview.button_pressed = Shows.preview_listening
+	body.add_child(preview)
+	_preview_note = UiKit.detail("")
+	body.add_child(_preview_note)
+	preview.toggled.connect(func(on: bool) -> void:
+		Shows.set_preview_listening(on)
+		preview.set_pressed_no_signal(Shows.preview_listening)   # stays off if the port was busy
+		_update_preview_note())
+	_update_preview_note()
+
 	body.add_child(UiKit.detail("%d sounds, %d songs, %d videos, %d light shows in %s. Media isn't in git: it syncs from the PC (see assets/README.md), then tap Rescan." % [
 			Media.list_sounds().size(), Media.list_music().size(), Media.list_videos().size(),
 			Shows.list_shows().size(), ProjectSettings.globalize_path("res://assets")]))
@@ -195,6 +210,27 @@ func _rescan() -> void:
 	Media.rescan()
 	Shows.rescan()
 	_rebuild()
+
+
+func _update_preview_note(_peer := "") -> void:
+	if not is_instance_valid(_preview_note):
+		return
+	if not Shows.preview_listening:
+		_preview_note.text = "Off. Turn on to let the Godot editor's Light Show dock light the LEDs while you edit a show."
+	elif Shows.is_previewing():
+		_preview_note.text = "The editor at %s is driving the lights." % Shows.preview_peer
+	else:
+		_preview_note.text = "Listening on UDP port %d. In the editor's Light Show dock, set Game at: %s" % [
+				Shows.PREVIEW_PORT, _local_addresses()]
+
+
+## This machine's network addresses (IPv4, not loopback), for the editor to reach it.
+func _local_addresses() -> String:
+	var found := PackedStringArray()
+	for address in IP.get_local_addresses():
+		if address.is_valid_ip_address() and not ":" in address and not address.begins_with("127.") and not address.begins_with("169.254."):
+			found.append(address)
+	return "127.0.0.1 (this computer)" if found.is_empty() else "127.0.0.1 (this computer) or " + " or ".join(found)
 
 
 func _picker(names: Array[StringName], empty_text: String) -> OptionButton:

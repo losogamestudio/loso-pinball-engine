@@ -87,21 +87,38 @@ A show is an **AnimationPlayer** timeline, much like Unreal's Sequencer. Each ke
    2. Right-click on that track at 0 s → **Insert Key**.
    3. Drag the song file from the FileSystem dock onto the key (or set its **Stream** in the Inspector). Its waveform now shows on the timeline, and pressing play in the Animation panel plays it.
 3. **Set the length.** Set the animation **length** (the box at the top right of the Animation panel, in seconds) to the song's length. Turn **looping** on if the song loops.
-4. **Add one lane per light.**
-   1. **Add Track → Call Method Track** → pick the **LightShow** root node.
-   2. Make one such track for each light you want to animate.
-   3. A track holds one key at each moment, so two lights changing at the same time need two tracks. That's also the tidiest way to work: one lane per light.
-5. **Add cues.**
+4. **Add cues with the Light Show dock** (right side of the editor, next to the Inspector; see [below](#the-light-show-dock-live-preview-in-the-editor)).
    1. Move the playhead to the beat.
-   2. Right-click on a light's track → **Insert Key** → choose **`cue`**.
-   3. Select the key and fill in its arguments in the **Inspector**:
-      - **light**: the light's name, e.g. `playfield`.
-      - **effect**: e.g. `CHASE`.
-      - **color**, **ms**, **color2**.
+   2. In the dock under **New cue**, pick the **Light**, **Effect**, **Color**, **Color 2** and **Speed**.
+   3. Click **Add cue at playhead**. The key goes on that light's own track, which the dock makes the first time. Ctrl+Z undoes it.
+   - Move, copy or delete keys on the timeline as usual. To change a key, select it and edit its arguments in the **Inspector**, or tap the light's swatch in the dock to load its cue, change it, and add it again at the same moment (which replaces it).
+   - **By hand, without the dock:** **Add Track → Call Method Track** → the **LightShow** root node, one track per light (a track holds one key at each moment, so two lights changing together need two tracks). Right-click the track → **Insert Key** → **`cue`**, then fill in **light**, **effect**, **color**, **ms**, **color2** in the Inspector.
+5. **Watch it on the real LEDs** while you work: see the next section.
 6. **Pick what it follows.** Select the **LightShow** root node. In the Inspector, **Sync To** is `music` (the song with the same name, the usual case), `video` (a cutscene with the same name), or `none` (its own clock from when it starts).
 7. **Save, sync to the Pi, and play it.** Restarting the game with the **Loso Pinball** icon imports it, or tap **Rescan** on the Audio & Video tab. Then play it from the Audio & Video tab or start its song.
 
 The template, the demo, and `media/light_show.gd` all follow this layout. To regenerate them, run `godot --headless --path . -s res://tools/make_show_template.gd`.
+
+### The Light Show dock: live preview in the editor
+
+Godot doesn't call Call Method keys while you preview an animation in the editor, so on its own the timeline can't light anything. Our editor plugin, **Loso Show Tools** (`addons/loso_show_tools/`, enabled in **Project → Project Settings → Plugins**), adds a **Light Show** dock that fills the gap. It reads the cue keys itself, works out what every light is doing at the playhead, and:
+
+- **Shows it in the dock:** one swatch per light with its effect, while you play or scrub.
+- **Sends it to the running game** with **Send to game** on. The game passes each change to the board, so **the real LEDs follow the playhead**. Dragging the playhead backwards or jumping around sends each light's state at the new spot, so you can step through a show beat by beat.
+
+**Setting it up:**
+1. Start the game with the board connected: on this PC (F5 in the editor, Teensy on USB) or on the Pi.
+2. In the game: **Service → Audio & Video → Media → Show preview from the editor** on. It's saved, so this is once per machine. The note under it shows this machine's IP address.
+3. In the editor's Light Show dock: **Game at** `127.0.0.1` for a game on this PC, or the Pi's IP (or its name, e.g. `loso-pi.local`). Turn **Send to game** on. The dock says **Game answering: N lights** when it's connected.
+4. Open your show, pick the `show` animation in the Animation panel, and play or scrub. The song plays from the editor on your PC, and the lights follow on the machine.
+
+**Good to know:**
+- The light list in the dock comes from the game (or from this PC's machine config if the game isn't answering). A light the show uses that the game doesn't have is listed in red.
+- **Try** sends the New cue settings to the game right away without adding a key, to audition an effect.
+- **Resend** sends every light again (e.g. if the game restarted; the dock also does this by itself when the game comes back).
+- Leaving the show, or turning **Send to game** off, turns the lights off.
+- It's plain UDP on port 4777 on your local network, and the game only listens while **Show preview** is on. It controls lights only, never coils.
+- A running show stops when the editor starts sending, so the two don't fight.
 
 ### Keeping it in sync
 

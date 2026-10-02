@@ -56,6 +56,7 @@ res://
 ├── Docs/                      # human-facing write-up: architecture, protocol, setup, Pi deployment
 ├── project.godot
 ├── addons/gdserial/          # GdSerial plugin (third party, don't edit)
+├── addons/loso_show_tools/   # our editor plugin: "Light Show" dock (show_dock.gd): live LED preview of a show while scrubbing, Add cue at playhead
 ├── pinball_io.gd             # Autoload "PinballIO": all board links → named signals
 ├── board_link.gd             # class BoardLink: one serial link speaking PINIO 0.3 (no GdSerial inside)
 ├── boards/board_types.gd     # class BoardTypes: what each board type's pins can do (mirror of board_<type>.h)
@@ -70,6 +71,7 @@ res://
 ├── media/media.gd            # Autoload "Media": sound effects, music (crossfade, push/pop), cutscene video, bus volumes
 ├── media/shows.gd            # Autoload "Shows": light shows (timeline cues) synced to music/video by name
 ├── media/light_show.gd       # class LightShow: root of a show scene (assets/shows/<name>.tscn), cue(...)
+├── media/show_cues.gd        # class ShowCues (@tool): reads cue keys, state at a time, the show-preview UDP lines; shared by Shows and the editor dock
 ├── assets/                   # sfx/, music/, video/, shows/ — NOT in git except README, shows/_template.tscn + test/ folders (synced PC → Pi)
 ├── default_bus_layout.tres   # audio buses: Master ← Music, SFX, Video
 ├── tools/make_test_sounds.gd # writes the generated test sounds in assets/**/test/
@@ -91,7 +93,7 @@ The original files live flat at the project root — that's how the user placed 
 **Service menu tabs** (left to right; see `Docs/service-menu.md`):
 - **Monitor** (`control.tscn` + `test_panel.gd`): the left third has an LED per input/coil/lamp showing only the pin number, plus a color swatch per LED light (its first LED index), grouped per board, plus the heartbeat LED. Coil LEDs show what Godot knows (`coil_commanded`, `coil_fired`, held flippers), with a cyan outline when the rule is armed. The right two thirds is the log.
 - **Hardware** (`config/hardware_page.gd`): Connection, Boards (Burn), Coils (Fire / Armed / Edit / Delete, Arm all), Switches, LED chains, Lights (Test / Edit / Delete, All off, Brightness), Lamps, Layout reset.
-- **Audio & Video** (`config/av_page.gd`): Screen, Audio volumes and tests, the Media library (music/video/show players, Light sync offset, Rescan).
+- **Audio & Video** (`config/av_page.gd`): Screen, Audio volumes and tests, the Media library (music/video/show players, Light sync offset, Show preview from the editor, Rescan).
 
 **The UI is touch-first** (Pi touchscreen, no keyboard): every action needs an on-screen button, big enough for a finger (~56 px tall for primary buttons like Service/Exit). Keyboard shortcuts are extras only. Anything that would otherwise need a keyboard (e.g. leaving fullscreen, which is the default: `DisplaySettings.DEFAULT_FULLSCREEN`) needs a button, like the Fullscreen box on the Audio & Video tab and the Quit button in the service menu top bar. Don't use `get_tree().change_scene_to_*()` — that would unload Main.
 
@@ -109,6 +111,7 @@ If the actual files are somewhere else, update this section. Don't move files th
 1. **Godot 4.4+**, the standard build (not .NET). The game is GDScript only.
 2. **GdSerial** plugin (https://github.com/SujithChristopher/gdserial). It's a Rust gdext serial library.
    - Installed at `addons/gdserial`, enabled under Project → Project Settings → Plugins.
+   - Our own editor plugin **Loso Show Tools** (`addons/loso_show_tools`) is enabled there too.
    - We use the async class `GdSerialManager`: `open(name, baud, timeout_ms, mode)`, `write(name, PackedByteArray)`, `close(name)`, `list_ports()`, and `poll_events()`, which must be called every frame in `_process`. Its signals are `data_received(port, data)` and `port_disconnected(port)`.
    - We open ports in `MODE_RAW` (the default) and split lines ourselves in `board_link.gd`.
 3. **Autoloads** (Project Settings → Globals → Autoload), in this order: `config/machine_config.gd` as **`MachineConfig`**, then `pinball_io.gd` as **`PinballIO`**, then `game/game.gd` as **`Game`**, then `media/media.gd` as **`Media`**, then `media/shows.gd` as **`Shows`**.
@@ -250,7 +253,8 @@ It scores from `PinballIO.switch_changed` by each input's kind, and disarms the 
 - **A show** is a scene `assets/shows/<name>.tscn`: a `LightShow` root (`media/light_show.gd`, `@export sync_to` = `music|video|none`), plus an AnimationPlayer with an animation named **`show`** (Call Method tracks on the root calling `cue(light, effect, color, ms, color2)`, **one track per light**: a track holds one key per moment), plus an optional `SongPreview` AudioStreamPlayer with an Audio track for the waveform.
 - **Shows don't run the AnimationPlayer.** `_load` instantiates the scene off-tree, reads the method-track keys into a sorted cue list (cached), and frees it. `_process` fires cues against the clock: `Media.get_music_position()` (playback + time since mix − output latency), `Media.get_video_position()`, or its own timer. Minus `sync_offset_ms` (−300..300, saved in `user://audio.cfg`). A clock that jumps back (a loop) restarts the cues.
 - **By name**: `Media.music_changed(name)` / `video_started(name)` start the show with the same name; stopping or changing the song or video stops it. `stop_show()` turns off only the lights the show touched. `play_show(name)` also starts the song with that name if needed.
-- **API**: `play_show`, `stop_show`, `is_show_playing`, `current_show`, `list_shows`, `has_show`, `get_cues`, `rescan`, `set_sync_offset`, `clock_override` (tests). Signals `show_started`, `show_finished`. Names starting with `_` (the template) aren't shows.
+- **API**: `play_show`, `stop_show`, `is_show_playing`, `current_show`, `list_shows`, `has_show`, `get_cues`, `rescan`, `set_sync_offset`, `clock_override` (tests), `set_preview_listening(on, remember)`, `is_previewing`. State `preview_listening`, `preview_peer`. Signals `show_started`, `show_finished`, `preview_changed(peer)`. Names starting with `_` (the template) aren't shows.
+- **Editor preview** (Godot never calls Call Method keys in the editor): the **Light Show** dock (`addons/loso_show_tools/show_dock.gd`) reads the open show's keys with `ShowCues`, works out each light's cue at the playhead (`ShowCues.state_at`), and with **Send to game** on sends each change as a UDP text line to the running game on port `ShowCues.PREVIEW_PORT` (4777): `PING` → `PONG <light>...`, `FX <light> <effect> <RRGGBB> <ms> <RRGGBB2>`, `OFF`. Shows only listens while **Show preview** is on (Audio & Video tab, saved in `user://audio.cfg`, off by default), stops a running show when cues arrive, and calls `PinballIO.set_light`. Lights only, never coils. The dock's **Add cue at playhead** puts a key on the light's own track (`ShowCues.track_for_light`, a new Call Method track if none) through the editor's undo history.
 - **Shows sync to the Pi with the media** (not in git), except `assets/shows/_template.tscn` and `assets/shows/test/` (the demo for `test_loop_a`), made by `tools/make_show_template.gd`.
 
 ## Coding conventions
@@ -264,7 +268,7 @@ It scores from `PinballIO.switch_changed` by each input's kind, and disarms the 
 
 ## Testing
 
-- **Without hardware**: `godot --headless --path . -s res://test/test_config_link.gd` checks MachineConfig validation, the CFG lines built from the default config, and the BoardLink handshake against a fake board. `-s res://test/test_shows.gd` checks LED lights through PinballIO against a fake PINIO 0.3 board (FX lines, re-send after WD OK) and light shows (cue reading, firing on a fake clock, loops, start by song name). `-s res://test/test_media.gd` checks Media (library, sfx voices, crossfade, push/pop, missing video) and switch sounds, using the generated test media. `-s res://test/test_game.gd` checks the Game autoload (scoring by switch kind, drains, abort) with faked `switch_changed` signals. `-s res://test/test_setup_ui.gd` drives the coil wizard and switch editor (always cancels, never writes user://). In `-s` mode, scripts that use autoload names must be `load()`ed at runtime, not preloaded. Tests live in `test/`. If a full `GdSerialManager` stub is ever added there, never ship it alongside the real plugin, because the class names would clash.
+- **Without hardware**: `godot --headless --path . -s res://test/test_config_link.gd` checks MachineConfig validation, the CFG lines built from the default config, and the BoardLink handshake against a fake board. `-s res://test/test_shows.gd` checks LED lights through PinballIO against a fake PINIO 0.3 board (FX lines, re-send after WD OK) and light shows (cue reading, firing on a fake clock, loops, start by song name), plus the editor dock outside the editor talking to Shows over real UDP on 127.0.0.1 (scrubbing drives the lights, Add cue). `-s res://test/test_media.gd` checks Media (library, sfx voices, crossfade, push/pop, missing video) and switch sounds, using the generated test media. `-s res://test/test_game.gd` checks the Game autoload (scoring by switch kind, drains, abort) with faked `switch_changed` signals. `-s res://test/test_setup_ui.gd` drives the coil wizard and switch editor (always cancels, never writes user://). In `-s` mode, scripts that use autoload names must be `load()`ed at runtime, not preloaded. Tests live in `test/`. If a full `GdSerialManager` stub is ever added there, never ship it alongside the real plugin, because the class names would clash.
 - **Without Godot**: open the Arduino Serial Monitor (line ending "Newline"), send `HELLO`, `WD OFF`, then `CFG IN ...` / `CFG COIL ...` / `CFG DONE` lines (see the top of `Firmware/pinio/pinio.ino`), then `RULE ALL ON`, `PULSE 0`, `LED 0 BLINK`. LEDs: `CFG CHAIN 0 8 30 GRB`, `CFG ZONE 0 0 0 30` before `CFG DONE`, then `FX 0 RAINBOW 000000 3000` (see `Docs/lighting.md`).
 - **Firmware compile check**: the Arduino IDE bundles `arduino-cli`: `arduino-cli compile --fqbn teensy:avr:teensy41 --warnings all Firmware/pinio`.
 - After changing GDScript, check that the project parses (`godot --headless --path . --quit` should show no script errors).
@@ -286,7 +290,7 @@ It scores from `PinballIO.switch_changed` by each input's kind, and disarms the 
    - ✅ Attract → Start game → 3 balls with score → drain → game over, plus Abort game and switch kinds (target/spinner/drain/start).
    - Next: ball kickout, tilt, ball save, per-state rules, a balls-per-game setting.
 4. Real playfield layout in the machine config.
-5. Audio, video, and a score display in Godot. ✅ Media autoload (sfx, music crossfade/stack, cutscene layer), switch and event sounds, volumes and media players on the Audio & Video tab. ✅ Light shows (Shows autoload, Godot-timeline authoring, synced to music/video by name, sync offset). Not yet done: Pi cutscene test, callouts/voice. An 80s-style segment display look is an option, possibly as a hybrid. **Validate cutscene video on real Pi 4 hardware before building out a lot of cutscene content** — see "Target hardware" above.
+5. Audio, video, and a score display in Godot. ✅ Media autoload (sfx, music crossfade/stack, cutscene layer), switch and event sounds, volumes and media players on the Audio & Video tab. ✅ Light shows (Shows autoload, Godot-timeline authoring, synced to music/video by name, sync offset, editor Light Show dock with live LED preview and Add cue). Not yet done: Pi cutscene test, callouts/voice. An 80s-style segment display look is an option, possibly as a hybrid. **Validate cutscene video on real Pi 4 hardware before building out a lot of cutscene content** — see "Target hardware" above.
 
 ## Things to avoid
 

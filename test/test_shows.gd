@@ -68,6 +68,8 @@ func _run() -> void:
 	var board := _test_lights_on_board()
 	await _test_show_cues_and_clock(board)
 	await _test_show_follows_music()
+	_test_show_cues_helpers()
+	await _test_editor_preview()
 
 	_io.close_port()
 	board.link = null   # the fake board and its link point at each other; let them go
@@ -155,3 +157,86 @@ func _test_show_follows_music() -> void:
 	await _frames()
 	_check(not _shows.is_show_playing(), "changing the song stops its show")
 	_media.stop_music(0.0)
+
+
+func _test_show_cues_helpers() -> void:
+	var cues: Array[Dictionary] = _shows.get_cues(&"test_loop_a")
+	var state := ShowCues.state_at(cues, 2.0)
+	_check(state[&"playfield"]["effect"] == "BLINK" and state[&"shoot_again"]["effect"] == "SOLID",
+			"state_at gives each light's latest cue (a cue exactly at the playhead counts)")
+	_check(not ShowCues.state_at(cues, -1.0).has(&"playfield"), "before the first cue a light has no state (off)")
+	var line := ShowCues.fx_line(&"playfield", state[&"playfield"])
+	_check(line == "FX playfield BLINK FF00FF 125 000000", "fx_line: %s" % line)
+	var fx := ShowCues.parse_fx(line)
+	_check(fx["light"] == &"playfield" and fx["ms"] == 125 and fx["color"] == Color(1, 0, 1), "parse_fx reads it back")
+	_check(ShowCues.parse_fx("FX playfield BLINK nothex 125 000000").is_empty(), "parse_fx rejects a bad line")
+
+
+## The editor's Light Show dock, run outside the editor, talking to Shows over
+## real UDP on this computer: scrubbing the timeline drives PinballIO's lights.
+func _test_editor_preview() -> void:
+	_shows.set_preview_listening(true, false)   # false: don't save it in user://
+	_check(_shows.preview_listening, "game listens for the show preview on UDP %d" % _shows.PREVIEW_PORT)
+
+	var show_scene: Node = (load("res://assets/shows/test/test_loop_a.tscn") as PackedScene).instantiate()
+	var player: AnimationPlayer = show_scene.get_node("AnimationPlayer")
+	# Outside the editor a playing player would call cue() itself; we only want its playhead.
+	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	root.add_child(show_scene)
+	player.assigned_animation = &"show"
+	player.seek(2.1, false)
+
+	var dock: Node = load("res://addons/loso_show_tools/show_dock.gd").new()
+	root.add_child(dock)
+	dock.set_show(show_scene)
+	dock.set_host("127.0.0.1")
+	dock.set_live(true)
+	_check(is_equal_approx(dock.playhead(), 2.1), "dock reads the playhead: %.2f" % dock.playhead())
+	await _until(func() -> bool: return _io.get_light(&"playfield")["effect"] == "BLINK", 120)
+	_check(_io.get_light(&"playfield")["effect"] == "BLINK" and _io.get_light(&"shoot_again")["effect"] == "SOLID",
+			"lights follow the playhead at 2.1 s over UDP")
+	_check(dock._game_lights == PackedStringArray(["playfield", "shoot_again"]), "the game told the dock its lights: %s" % [dock._game_lights])
+	_check(_shows.is_previewing(), "the game knows it's being previewed (%s)" % _shows.preview_peer)
+
+	player.seek(0.5, false)   # scrub back
+	await _until(func() -> bool: return _io.get_light(&"playfield")["effect"] == "RAINBOW", 120)
+	_check(is_equal_approx(dock.playhead(), 0.5), "dock follows the scrub: %.2f" % dock.playhead())
+	_check(_io.get_light(&"playfield")["effect"] == "RAINBOW" and _io.get_light(&"shoot_again")["effect"] == "PULSE",
+			"scrubbing back sends the state at the new playhead")
+
+	# Add cues. This changes the loaded demo show in memory only (never saved).
+	var anim := player.get_animation(&"show")
+	var tracks_before := anim.get_track_count()
+	dock.add_cue(1.5, &"shoot_again", "FADE", Color.RED, 300, Color.BLACK)
+	var track := ShowCues.track_for_light(anim, &"shoot_again")
+	_check(anim.get_track_count() == tracks_before and anim.track_get_key_count(track) == 4,
+			"a cue for a light with a track goes on that track")
+	dock.add_cue(1.5, &"shoot_again", "SOLID", Color.GREEN, 300, Color.BLACK)
+	_check(anim.track_get_key_count(track) == 4 and anim.method_track_get_params(track, 1)[1] == "SOLID",
+			"a cue at the same moment replaces the old one")
+	dock.add_cue(0.25, &"new_light", "BLINK", Color.BLUE, 100, Color.BLACK)
+	var new_track := ShowCues.track_for_light(anim, &"new_light")
+	_check(anim.get_track_count() == tracks_before + 1 and new_track == tracks_before
+			and anim.track_get_path(new_track) == NodePath("."),
+			"a cue for a new light makes its own Call Method track on the show node")
+	var cues := ShowCues.read(anim)
+	_check(cues.size() == 9 and cues.any(func(c: Dictionary) -> bool: return c["light"] == &"new_light"),
+			"the dock reads the new cues back (%d cues)" % cues.size())
+
+	dock.set_live(false)   # sends OFF
+	await _until(func() -> bool: return _io.get_light(&"playfield")["effect"] == "OFF", 120)
+	_check(_io.get_light(&"playfield")["effect"] == "OFF", "turning Send to game off turns the lights off")
+
+	dock.queue_free()
+	show_scene.queue_free()
+	_shows.set_preview_listening(false, false)
+	_check(not _shows.is_previewing(), "stop listening ends the preview")
+	await _frames()
+
+
+## Wait until a condition holds, or `frames` frames.
+func _until(condition: Callable, frames: int) -> void:
+	for i in frames:
+		if condition.call():
+			return
+		await process_frame
