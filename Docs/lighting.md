@@ -87,7 +87,7 @@ A show is an **AnimationPlayer** timeline, much like Unreal's Sequencer. Each ke
    2. Right-click on that track at 0 s → **Insert Key**.
    3. Drag the song file from the FileSystem dock onto the key (or set its **Stream** in the Inspector). Its waveform now shows on the timeline, and pressing play in the Animation panel plays it.
 3. **Set the length.** Set the animation **length** (the box at the top right of the Animation panel, in seconds) to the song's length. Turn **looping** on if the song loops.
-4. **Add cues with the Light Show dock** (right side of the editor, next to the Inspector; see [below](#the-light-show-dock-live-preview-in-the-editor)).
+4. **Add cues with the Light Show dock** (right side of the editor, under the Inspector; see [below](#the-light-show-dock-live-preview-in-the-editor)).
    1. Move the playhead to the beat.
    2. In the dock under **New cue**, pick the **Light**, **Effect**, **Color**, **Color 2** and **Speed**.
    3. Click **Add cue at playhead**. The key goes on that light's own track, which the dock makes the first time. Ctrl+Z undoes it.
@@ -101,7 +101,7 @@ The template, the demo, and `media/light_show.gd` all follow this layout. To reg
 
 ### The Light Show dock: live preview in the editor
 
-Godot doesn't call Call Method keys while you preview an animation in the editor, so on its own the timeline can't light anything. Our editor plugin, **Loso Show Tools** (`addons/loso_show_tools/`, enabled in **Project → Project Settings → Plugins**), adds a **Light Show** dock that fills the gap. It reads the cue keys itself, works out what every light is doing at the playhead, and:
+Godot doesn't call Call Method keys while you preview an animation in the editor, so on its own the timeline can't light anything. Our editor plugin, **Loso Show Tools** (`addons/loso_show_tools/`, enabled in **Project → Project Settings → Plugins**), adds a **Light Show** dock (right side, under the Inspector) that fills the gap. Can't see it? Check the plugin is on in Project Settings → Plugins, or turn it off and on again there; you can drag the dock anywhere. It reads the cue keys itself, works out what every light is doing at the playhead, and:
 
 - **Shows it in the dock:** one swatch per light with its effect, while you play or scrub.
 - **Sends it to the running game** with **Send to game** on. The game passes each change to the board, so **the real LEDs follow the playhead**. Dragging the playhead backwards or jumping around sends each light's state at the new spot, so you can step through a show beat by beat.

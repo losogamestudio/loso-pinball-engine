@@ -20,7 +20,10 @@ func _enter_tree() -> void:
 	scroll.add_child(_panel)
 	_dock = EditorDock.new()
 	_dock.title = "Light Show"
-	_dock.default_slot = EditorDock.DOCK_SLOT_RIGHT_UL
+	_dock.layout_key = "LosoLightShow"   # the editor remembers where you move it under this key
+	# Lower right, under the Inspector: that slot is empty by default, so the dock
+	# gets its own space instead of a tab hidden behind Inspector | Signals | Groups.
+	_dock.default_slot = EditorDock.DOCK_SLOT_RIGHT_BL
 	_dock.add_child(scroll)
 	add_dock(_dock)
 	scene_changed.connect(_panel.set_show)
