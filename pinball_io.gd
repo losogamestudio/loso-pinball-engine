@@ -47,6 +47,7 @@ var switches := {}
 ## Persisted settings (loaded in _ready, saved via set_auto_connect / on first link).
 var auto_connect := false                ## if true, try last_port automatically at startup
 var last_port := ""                      ## most recent port a board answered on
+var remember_port := true                ## save last_port when a board answers; tests turn it off for fake boards
 var light_brightness := 0.5              ## LED chain brightness 0..1 (a power cap), see set_light_brightness
 
 var _serial: GdSerialManager
@@ -385,7 +386,7 @@ func _drop_link(port: String) -> void:
 
 func _on_link_linked(firmware: String, board_type: String, uid: String, link: BoardLink) -> void:
 	var port := link.port_name
-	if last_port != port:   # remember a working port, but don't hit disk every link
+	if remember_port and last_port != port:   # remember a working port, but don't hit disk every link
 		last_port = port
 		_save_settings()
 	port_linked.emit(port, firmware, board_type, uid)

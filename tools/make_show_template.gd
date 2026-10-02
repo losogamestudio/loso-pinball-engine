@@ -36,7 +36,7 @@ func _run() -> void:
 
 
 ## A LightShow scene: root + AnimationPlayer ("show" animation with a Call
-## Method track of cue keys, and an Audio track with the song if given) + SongPreview.
+## Method track of light keys, and an Audio track with the song if given) + SongPreview.
 func _make_show(length: float, loops: bool, cues: Array, song: AudioStream) -> PackedScene:
 	var root := Node.new()
 	root.name = "LightShow"
@@ -52,14 +52,14 @@ func _make_show(length: float, loops: bool, cues: Array, song: AudioStream) -> P
 	anim.loop_mode = Animation.LOOP_LINEAR if loops else Animation.LOOP_NONE
 	# One Call Method track per light, like one lane per light in Sequencer.
 	# (A track holds one key per moment, so two lights changing at the same
-	# time need two tracks.) All of them call cue() on "." = the LightShow root.
+	# time need two tracks.) All of them call light() on "." = the LightShow root.
 	var tracks := {}   # light name -> track index
 	for c: Array in cues:
 		var light: StringName = c[1]
 		if not tracks.has(light):
 			tracks[light] = anim.add_track(Animation.TYPE_METHOD)
 			anim.track_set_path(tracks[light], NodePath("."))
-		anim.track_insert_key(tracks[light], c[0], {"method": &"cue", "args": c.slice(1)})
+		anim.track_insert_key(tracks[light], c[0], {"method": &"light", "args": c.slice(1)})
 	if song:
 		var audio := anim.add_track(Animation.TYPE_AUDIO)
 		anim.track_set_path(audio, NodePath("SongPreview"))

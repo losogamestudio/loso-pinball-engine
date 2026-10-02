@@ -79,7 +79,9 @@ Shows sit with the media, so they **sync to the Pi like the media** and aren't c
 
 ### Making a show in the Godot editor
 
-A show is an **AnimationPlayer** timeline, much like Unreal's Sequencer. Each key on it calls `cue(...)` with one light's new effect.
+A show is an **AnimationPlayer** timeline, much like Unreal's Sequencer. Each key on it calls a method named for its **cue type** with one light's new effect, so it reads `light(&"playfield", "BLINK", …)` on the timeline. Light cues are the only type so far; coil and servo cues will be added the same way. (Shows made before cue types used `cue(...)`, which still works.)
+
+**Too much text on the keys?** The Animation panel draws every argument after the method name, cut off at the next key. The dock shows the settings anyway, so you can hide the key text with the Animation panel's **Toggle method names** button (the method icon in its toolbar).
 
 1. **Copy the template.** In the FileSystem dock, right-click `assets/shows/_template.tscn` → **Duplicate**. Name it **exactly like the song** without the extension, e.g. `attract.tscn` for `attract.ogg`, and open it.
 2. **Add the song so you can see it.** Select the **AnimationPlayer** node; the **Animation** panel opens at the bottom with the `show` animation.
@@ -89,11 +91,13 @@ A show is an **AnimationPlayer** timeline, much like Unreal's Sequencer. Each ke
 3. **Set the length.** Set the animation **length** (the box at the top right of the Animation panel, in seconds) to the song's length. Turn **looping** on if the song loops.
 4. **Add cues with the Light Show dock** (right side of the editor, under the Inspector; see [below](#the-light-show-dock-live-preview-in-the-editor)).
    1. Move the playhead to the beat.
-   2. Each light has a row under **Lights at the playhead**: a swatch, which key it's following (**key at 2.00 s**, **key here**, or **no key yet**), **+** and **✕**, then its **effect**, **color**, **color 2** and **speed** (ms).
+   2. Each light has a row under **Lights at the playhead**: a swatch, the light's **name** with a **▾** picker, which key it's following (**@2.00 s**, **here**, or **no key**), **+** and **✕**, then its **effect**, **color**, **color 2** and **speed** (ms).
    3. **+** adds a new key at the playhead for that light, a copy of the row's settings. Then change the effect, colors or speed in the row: that edits the key. The key goes on the light's own track, which the dock makes the first time.
    4. Changing a row's fields **edits the key the light is following**, even when that key is earlier than the playhead (the row says which). A light with **no key yet** gets one at the playhead. **✕** deletes the key. Ctrl+Z undoes any of it, and dragging a color is one undo step.
+   5. **Key all** (next to the **Lights at the playhead** heading) adds a key at the playhead on every light that's following one, with the settings it has now, so nothing changes until you edit a row. Handy at the start of a new section of the song. Lights already on a key there, or with no key yet, are left alone. One Ctrl+Z undoes it.
+   6. **Renaming:** type a new name in a row and press Enter, or pick one of the machine's lights from **▾**. Every key of that light gets the new name (the first argument of its keys). A key you insert by hand on the timeline starts with no name and shows up as a **(no name)** row, ready to name this way. Spaces become `_`.
    - Move or copy keys on the timeline as usual. Selecting a key there and editing its arguments in the **Inspector** works too.
-   - **By hand, without the dock:** **Add Track → Call Method Track** → the **LightShow** root node, one track per light (a track holds one key at each moment, so two lights changing together need two tracks). Right-click the track → **Insert Key** → **`cue`**, then fill in **light**, **effect**, **color**, **ms**, **color2** in the Inspector.
+   - **By hand, without the dock:** **Add Track → Call Method Track** → the **LightShow** root node, one track per light (a track holds one key at each moment, so two lights changing together need two tracks). Right-click the track → **Insert Key** → **`light`**, then fill in **light**, **effect**, **color**, **ms**, **color2** in the Inspector.
 5. **Watch it on the real LEDs** while you work: see the next section.
 6. **Pick what it follows.** Select the **LightShow** root node. In the Inspector, **Sync To** is `music` (the song with the same name, the usual case), `video` (a cutscene with the same name), or `none` (its own clock from when it starts).
 7. **Save, sync to the Pi, and play it.** Restarting the game with the **Loso Pinball** icon imports it, or tap **Rescan** on the Audio & Video tab. Then play it from the Audio & Video tab or start its song.

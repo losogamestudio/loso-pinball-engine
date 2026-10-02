@@ -15,18 +15,25 @@ extends RefCounted
 ##   editor -> game   FX <light> <effect> <RRGGBB> <ms> <RRGGBB2>
 ##   editor -> game   OFF                                    (every light off)
 
-const METHOD := &"cue"
+## Each key on a show's Call Method tracks calls a method named for its cue
+## type, so the timeline reads light(...). Only light cues exist so far; coil
+## and servo cues will be more methods (and types) next to it.
+const METHOD := &"light"
+## The old name of light cues (before cue types). Still read, never written.
+const OLD_METHOD := &"cue"
+const TYPE_LIGHT := &"light"
 const ANIMATION_NAME := &"show"
 const PREVIEW_PORT := 4777
 
-## Defaults for anything a cue key leaves out (same as LightShow.cue()).
+## Defaults for anything a cue key leaves out (same as LightShow.light()).
 const DEFAULT_EFFECT := "SOLID"
 const DEFAULT_MS := 500
 
 
-## Every cue(...) key on the animation's enabled Call Method tracks, sorted by
-## time: [{time, light, effect, color, ms, color2, track}] (track = which
-## animation track the key is on, for editors).
+## Every light(...) key (or old cue(...) key) on the animation's enabled Call
+## Method tracks, sorted by time: [{type, time, light, effect, color, ms,
+## color2, track}] (type = &"light"; track = which animation track the key is
+## on, for editors).
 static func read(anim: Animation) -> Array[Dictionary]:
 	var cues: Array[Dictionary] = []
 	if anim == null:
@@ -35,10 +42,11 @@ static func read(anim: Animation) -> Array[Dictionary]:
 		if anim.track_get_type(track) != Animation.TYPE_METHOD or not anim.track_is_enabled(track):
 			continue
 		for key in anim.track_get_key_count(track):
-			if anim.method_track_get_name(track, key) != METHOD:
+			if not is_light_method(anim.method_track_get_name(track, key)):
 				continue
 			var args: Array = anim.method_track_get_params(track, key)
 			cues.append({
+				"type": TYPE_LIGHT,
 				"time": anim.track_get_key_time(track, key),
 				"light": StringName(args[0]) if args.size() > 0 else &"",
 				"effect": str(args[1]) if args.size() > 1 and str(args[1]) != "" else DEFAULT_EFFECT,
@@ -96,7 +104,7 @@ static func track_for_light(anim: Animation, light: StringName) -> int:
 		if anim.track_get_type(track) != Animation.TYPE_METHOD:
 			continue
 		for key in anim.track_get_key_count(track):
-			if anim.method_track_get_name(track, key) != METHOD:
+			if not is_light_method(anim.method_track_get_name(track, key)):
 				continue
 			var args: Array = anim.method_track_get_params(track, key)
 			if args.size() > 0 and StringName(args[0]) == light:
@@ -105,6 +113,11 @@ static func track_for_light(anim: Animation, light: StringName) -> int:
 	return -1
 
 
-## A method key's value for a cue(...) call.
+## Does a method key with this method name hold a light cue?
+static func is_light_method(method: StringName) -> bool:
+	return method == METHOD or method == OLD_METHOD
+
+
+## A method key's value for a light(...) call.
 static func cue_key(light: StringName, effect: String, color: Color, ms: int, color2: Color) -> Dictionary:
 	return {"method": METHOD, "args": [light, effect, color, ms, color2]}

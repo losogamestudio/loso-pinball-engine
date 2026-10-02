@@ -1,10 +1,10 @@
 [gd_scene format=3 uid="uid://di2ao4vuyqbjd"]
 
-[ext_resource type="Script" path="res://media/light_show.gd" id="1_42npa"]
+[ext_resource type="Script" uid="uid://y42js3atkm7i" path="res://media/light_show.gd" id="1_42npa"]
 [ext_resource type="AudioStream" uid="uid://3l2hkyh7cua7" path="res://assets/music/test/test_loop_a.wav" id="2_u1r4s"]
 
 [sub_resource type="Animation" id="Animation_bx1gh"]
-length = 4.0
+length = 4.0333333
 loop_mode = 1
 tracks/0/type = "method"
 tracks/0/imported = false
@@ -13,20 +13,26 @@ tracks/0/path = NodePath(".")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
 tracks/0/keys = {
-"times": PackedFloat32Array(0, 1, 2, 3),
-"transitions": PackedFloat32Array(1, 1, 1, 1),
+"times": PackedFloat32Array(0, 1, 2, 2.53, 3, 3.8666668),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1),
 "values": [{
-"args": [&"playfield", "SOLID", Color(0.125, 1, 0, 1), 2000, Color(0, 0, 0, 1)],
-"method": &"cue"
+"args": [&"playfield", "RAINBOW", Color(1, 1, 1, 1), 2000, Color(0, 0, 0, 1)],
+"method": &"light"
 }, {
 "args": [&"playfield", "CHASE", Color(0, 1, 1, 1), 100, Color(0, 0, 0, 1)],
-"method": &"cue"
+"method": &"light"
 }, {
-"args": [&"playfield", "BLINK", Color(0.33152574, 0.031372543, 0.42745098, 1), 125, Color(0, 0, 0, 1)],
-"method": &"cue"
+"args": [&"playfield", "BLINK", Color(1, 0, 1, 1), 125, Color(0, 0, 0, 1)],
+"method": &"light"
 }, {
-"args": [&"playfield", "WIPE", Color(0, 1, 0.109375, 1), 900, Color(0, 0, 0, 1)],
-"method": &"cue"
+"args": [&"playfield", "BLINK", Color(1, 0, 1, 1), 125, Color(0, 0, 0, 1)],
+"method": &"light"
+}, {
+"args": [&"playfield", "WIPE", Color(1, 0.64705884, 0, 1), 900, Color(0, 0, 0, 1)],
+"method": &"light"
+}, {
+"args": [&"playfield", "SOLID", Color(1, 1, 1, 1), 500, Color(0, 0, 0, 1)],
+"method": &"light"
 }]
 }
 tracks/1/type = "method"
@@ -36,17 +42,20 @@ tracks/1/path = NodePath(".")
 tracks/1/interp = 1
 tracks/1/loop_wrap = true
 tracks/1/keys = {
-"times": PackedFloat32Array(0, 2, 3.5),
-"transitions": PackedFloat32Array(1, 1, 1),
+"times": PackedFloat32Array(0, 2, 2.53, 3.5),
+"transitions": PackedFloat32Array(1, 1, 1, 1),
 "values": [{
 "args": [&"shoot_again", "PULSE", Color(1, 0, 0, 1), 500, Color(0, 0, 0, 1)],
-"method": &"cue"
+"method": &"light"
 }, {
 "args": [&"shoot_again", "SOLID", Color(1, 1, 1, 1), 500, Color(0, 0, 0, 1)],
-"method": &"cue"
+"method": &"light"
+}, {
+"args": [&"shoot_again", "SOLID", Color(1, 1, 1, 1), 500, Color(0, 0, 0, 1)],
+"method": &"light"
 }, {
 "args": [&"shoot_again", "BLINK", Color(1, 1, 0, 1), 100, Color(0, 0, 0, 1)],
-"method": &"cue"
+"method": &"light"
 }]
 }
 tracks/2/type = "audio"
@@ -70,10 +79,10 @@ _data = {
 &"show": SubResource("Animation_bx1gh")
 }
 
-[node name="LightShow" type="Node" unique_id=1516874508]
+[node name="LightShow" type="Node" unique_id=610051821]
 script = ExtResource("1_42npa")
 
-[node name="SongPreview" type="AudioStreamPlayer" parent="." unique_id=556999934]
+[node name="SongPreview" type="AudioStreamPlayer" parent="." unique_id=1806341751]
 
-[node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=633514998]
+[node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=193332446]
 libraries/ = SubResource("AnimationLibrary_e4rjm")

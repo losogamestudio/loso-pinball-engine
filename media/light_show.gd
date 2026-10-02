@@ -8,7 +8,9 @@ extends Node
 ##   LightShow (this script)
 ##   ├── AnimationPlayer    with an animation called "show":
 ##   │                        a Call Method track on the LightShow node, whose
-##   │                        keys call cue(...) at the right moments
+##   │                        keys call light(...) at the right moments
+##   │                        (one method per cue type: light now, coil and
+##   │                        servo later)
 ##   └── SongPreview        an AudioStreamPlayer; put the song on an Audio
 ##                          track so its waveform shows while you place cues
 ##
@@ -23,13 +25,20 @@ extends Node
 @export_enum("music", "video", "none") var sync_to: String = "music"
 
 
-## One light cue. Each Call Method key on the "show" track calls this.
-##   light:  a light's name from the Hardware tab, e.g. &"playfield"
+## A light cue. Each light key on the "show" timeline calls this, so the key
+## reads light(&"playfield", "BLINK", ...) on the timeline.
+##   light_name: a light's name from the Hardware tab, e.g. &"playfield"
 ##   effect: OFF SOLID BLINK PULSE CHASE WIPE FADE RAINBOW SPARKLE
 ##   color / color2: the effect's colors
 ##   ms:     the effect's speed: period, or duration for FADE and WIPE
-func cue(light: StringName, effect: String = "SOLID", color: Color = Color.WHITE,
+func light(light_name: StringName, effect: String = "SOLID", color: Color = Color.WHITE,
 		ms: int = 500, color2: Color = Color.BLACK) -> void:
 	# Only runs if someone plays the AnimationPlayer by hand; the Shows autoload
 	# reads the keys instead. Either way the board gets the same command.
-	PinballIO.set_light(light, effect, color, ms, color2)
+	PinballIO.set_light(light_name, effect, color, ms, color2)
+
+
+## The old name for light(), from before cue types. Old shows' keys still call it.
+func cue(light_name: StringName, effect: String = "SOLID", color: Color = Color.WHITE,
+		ms: int = 500, color2: Color = Color.BLACK) -> void:
+	light(light_name, effect, color, ms, color2)

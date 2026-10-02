@@ -95,6 +95,7 @@ func _test_lights_on_board() -> FakeBoard:
 	var board := FakeBoard.new()
 	var link := BoardLink.new("FAKE", board.handle)
 	board.link = link
+	_io.remember_port = false   # don't save "FAKE" as this machine's board port
 	_io._attach_link(link)   # HELLO -> config -> ready, all synchronous with the fake
 	_check(_io.get_port_for_board(&"main") == "FAKE", "fake board linked and configured")
 	_check(board.received.has("CFG CHAIN 0 8 30 GRB") and board.received.has("CFG ZONE 1 0 0 1"),
@@ -248,6 +249,40 @@ func _test_editor_preview() -> void:
 	var made: Array = anim.method_track_get_params(nl_track, anim.track_find_key(nl_track, 0.1, Animation.FIND_MODE_APPROX))
 	_check(made[1] == "SOLID" and made[2] == Color.RED,
 			"editing a light with no key yet adds one at the playhead (SOLID, not OFF): %s" % [made])
+
+	# Key all: a key on every light at the playhead, same settings, nothing changes yet.
+	player.seek(2.75, false)
+	await _frames()
+	var before := ShowCues.state_at(ShowCues.read(anim), 2.75)
+	var count_before := ShowCues.read(anim).size()
+	dock.key_all_at_playhead()
+	var after := ShowCues.state_at(ShowCues.read(anim), 2.75)
+	var same := after.size() == before.size()
+	for light: StringName in before:
+		same = same and is_equal_approx(after[light]["time"], 2.75) and after[light]["effect"] == before[light]["effect"] \
+				and after[light]["color"] == before[light]["color"] and after[light]["ms"] == before[light]["ms"]
+	_check(same and ShowCues.read(anim).size() == count_before + before.size(),
+			"Key all adds a key at the playhead on each of the %d lights, keeping their settings" % before.size())
+	dock.key_all_at_playhead()
+	_check(ShowCues.read(anim).size() == count_before + before.size(), "Key all again at the same moment adds nothing")
+
+	# Rename: a key added by hand with no light name, then a light with several keys.
+	var blank_track := anim.add_track(Animation.TYPE_METHOD)
+	anim.track_set_path(blank_track, NodePath("."))
+	anim.track_insert_key(blank_track, 1.25, {"method": &"light", "args": [&"", "SOLID", Color.WHITE, 500, Color.BLACK]})
+	await _frames()
+	_check(dock._rows.has(&""), "a key with no light name gets its own row")
+	dock.rename_light(&"", "shoot again")
+	_check(anim.method_track_get_params(blank_track, 0)[0] == &"shoot_again",
+			"renaming it sets arg 0 (spaces become _): %s" % [anim.method_track_get_params(blank_track, 0)])
+	var count_new := ShowCues.read(anim).filter(func(c: Dictionary) -> bool: return c["light"] == &"new_light").size()
+	dock.rename_light(&"new_light", "flasher")
+	var count_renamed := ShowCues.read(anim).filter(func(c: Dictionary) -> bool: return c["light"] == &"flasher").size()
+	_check(count_new >= 2 and count_renamed == count_new and ShowCues.read(anim).all(func(c: Dictionary) -> bool: return c["light"] != &"new_light"),
+			"renaming a light renames all %d of its keys" % count_new)
+	await _frames()
+	_check(dock._rows.has(&"flasher") and not dock._rows.has(&"new_light") and not dock._rows.has(&""),
+			"the rows follow the new names")
 
 	dock.set_live(false)   # sends OFF
 	await _until(func() -> bool: return _io.get_light(&"playfield")["effect"] == "OFF", 120)

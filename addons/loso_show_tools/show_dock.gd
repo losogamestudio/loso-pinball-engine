@@ -53,6 +53,7 @@ var _live_box: CheckBox
 var _host_edit: LineEdit
 var _link_label: Label
 var _rows_box: VBoxContainer
+var _key_all: Button
 var _rows := {}                  ## light -> LightRow
 var _row_names: Array[StringName] = []
 
@@ -60,7 +61,8 @@ var _row_names: Array[StringName] = []
 ## The controls of one light's row.
 class LightRow:
 	var swatch: TextureRect
-	var at: Label                ## "key at 1.00 s" / "no key yet"
+	var name_edit: LineEdit      ## the light's name in its keys (arg 0); edit to rename
+	var at: Label                ## "@1.00 s" / "here" / "no key"
 	var effect: OptionButton
 	var color1: ColorPickerButton
 	var color2: ColorPickerButton
@@ -142,6 +144,8 @@ func _process(_delta: float) -> void:
 	var time := playhead()
 	for row: LightRow in _rows.values():
 		row.add.disabled = time < 0.0
+	if _key_all:
+		_key_all.disabled = time < 0.0
 	if _show == null:
 		_status.text = "Open a light show scene (assets/shows/) to preview it."
 		return
@@ -164,7 +168,7 @@ func _apply_state(state: Dictionary, time: float) -> void:
 		row.delete.disabled = cue.is_empty()
 		if not cue.is_empty():
 			var on_key: bool = absf(cue["time"] - time) < AT_KEY
-			row.at.text = "key here" if on_key else "key at %.2f s" % cue["time"]
+			row.at.text = "here" if on_key else "@%.2f s" % cue["time"]
 		if _live and _game_answering() and _sent.get(light, "") != id:
 			if _send(ShowCues.fx_line(light, cue)):
 				_sent[light] = id
@@ -262,6 +266,31 @@ func add_cue(time: float, light: StringName, effect: String, color: Color, ms: i
 	_cues_dirty = true
 
 
+## "Key all": a new key at the playhead for every light that's following a
+## key, with the settings it has now (so nothing changes yet, ready to edit).
+## Lights already on a key here, or with no key yet, are left alone. One undo step.
+func key_all_at_playhead() -> void:
+	var time := playhead()
+	if _anim == null or time < 0.0:
+		return
+	_reread_if_needed()
+	var do_calls: Array = []
+	var undo_calls: Array = []
+	var state := ShowCues.state_at(_cues, time)
+	for light: StringName in state:
+		var cue: Dictionary = state[light]
+		if absf(cue["time"] - time) < AT_KEY:
+			continue   # already has a key here
+		var track: int = cue["track"]   # the track its current key is on
+		do_calls.append(["track_insert_key", track, time,
+				ShowCues.cue_key(light, cue["effect"], cue["color"], cue["ms"], cue["color2"])])
+		undo_calls.append(["track_remove_key_at_time", track, time])
+	if do_calls.is_empty():
+		return
+	_do(do_calls, undo_calls, "Key all lights at %.2f s" % time)
+	_cues_dirty = true
+
+
 ## Change the key a light follows at the playhead (or add one at the playhead
 ## if it has none yet). Several changes in a row (dragging a color) are one undo step.
 func edit_at_playhead(light: StringName, effect: String, color: Color, ms: int, color2: Color) -> void:
@@ -305,6 +334,42 @@ func delete_at_playhead(light: StringName) -> void:
 	_cues_dirty = true
 
 
+## Rename a light in the show: every light key whose light name (arg 0) is
+## `old` gets `new_name` instead, on every track. One undo step.
+func rename_light(old: StringName, new_name: String) -> void:
+	var renamed := StringName(new_name.strip_edges().replace(" ", "_"))   # names have no spaces
+	if _anim == null or renamed == &"" or renamed == old:
+		return
+	var do_calls: Array = []
+	var undo_calls: Array = []
+	for track in _anim.get_track_count():
+		if _anim.track_get_type(track) != Animation.TYPE_METHOD:
+			continue
+		for key in _anim.track_get_key_count(track):
+			if not ShowCues.is_light_method(_anim.method_track_get_name(track, key)):
+				continue
+			var value: Dictionary = _anim.track_get_key_value(track, key)
+			var args: Array = value.get("args", [])
+			if (StringName(args[0]) if args.size() > 0 else &"") != old:
+				continue
+			var new_value := value.duplicate(true)
+			var new_args: Array = (new_value.get("args", []) as Array).duplicate()
+			if new_args.is_empty():
+				new_args.append(renamed)
+			else:
+				new_args[0] = renamed
+			new_value["args"] = new_args
+			do_calls.append(["track_set_key_value", track, key, new_value])
+			undo_calls.append(["track_set_key_value", track, key, value])
+	if do_calls.is_empty():
+		_refresh_rows()   # nothing to rename (a light with no keys): put its name back
+		return
+	if _live:
+		_send(ShowCues.fx_line(old, {}))   # the old light lets go; the new one gets its cue below
+	_do(do_calls, undo_calls, "Rename light %s to %s" % [old if old != &"" else &"(no name)", renamed])
+	_cues_dirty = true
+
+
 ## Run Animation calls through the editor's undo history (or directly in tests).
 ## merge = repeated actions with the same name become one undo step.
 func _do(do_calls: Array, undo_calls: Array, action: String, merge := false) -> void:
@@ -345,14 +410,18 @@ func _on_row_add(light: StringName) -> void:
 ## plus any light already used in the show.
 func _light_names() -> Array[StringName]:
 	var names: Array[StringName] = []
-	var source: PackedStringArray = _game_lights if not _game_lights.is_empty() else _config_light_names()
-	for n in source:
+	for n in _hardware_light_names():
 		if not names.has(StringName(n)):
 			names.append(StringName(n))
 	for cue in _cues:
 		if not names.has(cue["light"]):
 			names.append(cue["light"])
 	return names
+
+
+## The machine's lights: the game's (when it answers), else this PC's machine config.
+func _hardware_light_names() -> PackedStringArray:
+	return _game_lights if not _game_lights.is_empty() else _config_light_names()
 
 
 func _config_light_names() -> PackedStringArray:
@@ -407,11 +476,31 @@ func _make_row(light: StringName) -> Control:
 	row.swatch.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 	row.swatch.custom_minimum_size = Vector2(20, 20)
 	top.add_child(row.swatch)
-	var name_label := Label.new()
-	name_label.text = String(light)
-	name_label.size_flags_horizontal = SIZE_EXPAND_FILL
-	name_label.clip_text = true
-	top.add_child(name_label)
+	# The name: type a new one (Enter), or pick a machine light from ▾. Renames
+	# every key of this light.
+	row.name_edit = LineEdit.new()
+	row.name_edit.text = String(light)
+	row.name_edit.placeholder_text = "(no name)"
+	row.name_edit.tooltip_text = "The light these keys drive. Type a new name and press Enter, or pick one from ▾, to rename all of this light's keys."
+	row.name_edit.size_flags_horizontal = SIZE_EXPAND_FILL
+	row.name_edit.custom_minimum_size.x = 60
+	row.name_edit.select_all_on_focus = true
+	row.name_edit.text_submitted.connect(func(text: String) -> void: rename_light(light, text))
+	row.name_edit.focus_exited.connect(func() -> void:
+		if is_instance_valid(row.name_edit) and row.name_edit.text != String(light):
+			rename_light(light, row.name_edit.text))
+	top.add_child(row.name_edit)
+	var pick := MenuButton.new()
+	pick.text = "▾"
+	pick.flat = false
+	pick.tooltip_text = "Pick a light from the machine"
+	var popup := pick.get_popup()
+	pick.about_to_popup.connect(func() -> void:
+		popup.clear()
+		for n in _hardware_light_names():
+			popup.add_item(n))
+	popup.index_pressed.connect(func(index: int) -> void: rename_light(light, popup.get_item_text(index)))
+	top.add_child(pick)
 	row.at = Label.new()
 	row.at.modulate = Color(1, 1, 1, 0.6)
 	top.add_child(row.at)
@@ -469,7 +558,7 @@ func _show_cue(light: StringName, cue: Dictionary) -> void:
 				image.set_pixel(x, y, Color.from_hsv(x / 18.0, 0.9, 1.0))
 	row.swatch.texture = ImageTexture.create_from_image(image)
 	if cue.is_empty():
-		row.at.text = "no key yet"
+		row.at.text = "no key"
 		row.effect.select(IoDefs.EFFECTS.find("OFF"))
 		return
 	row.effect.select(maxi(IoDefs.EFFECTS.find(cue["effect"]), 0))   # select() doesn't fire item_selected
@@ -519,12 +608,21 @@ func _build_ui() -> void:
 	_link_label.modulate = Color(1, 1, 1, 0.7)
 	add_child(_link_label)
 
-	add_child(_heading("Lights at the playhead"))
+	var rows_head := HBoxContainer.new()
+	var rows_title := _heading("Lights at the playhead")
+	rows_title.size_flags_horizontal = SIZE_EXPAND_FILL
+	rows_head.add_child(rows_title)
+	_key_all = Button.new()
+	_key_all.text = "Key all"
+	_key_all.tooltip_text = "New key at the playhead on every light, with the settings it has now (one undo step)"
+	_key_all.pressed.connect(key_all_at_playhead)
+	rows_head.add_child(_key_all)
+	add_child(rows_head)
 	_rows_box = VBoxContainer.new()
 	add_child(_rows_box)
 
 	var help := Label.new()
-	help.text = "Each row shows the key a light follows at the playhead. Change its effect, colors or speed to edit that key (a light with no key yet gets one at the playhead). + adds a new key at the playhead, ✕ deletes the key. Ctrl+Z undoes. Move keys on the Animation timeline as usual."
+	help.text = "Each row shows the key a light follows at the playhead. Change its effect, colors or speed to edit that key (a light with no key yet gets one at the playhead). + adds a new key at the playhead, ✕ deletes the key. Key all adds one on every light at once. Edit a name (or pick one from ▾) to rename all of that light's keys. Ctrl+Z undoes. Move keys on the Animation timeline as usual."
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.modulate = Color(1, 1, 1, 0.6)
 	add_child(help)
