@@ -215,7 +215,9 @@ func _rescan() -> void:
 func _update_preview_note(_peer := "") -> void:
 	if not is_instance_valid(_preview_note):
 		return
-	if not Shows.preview_listening:
+	if Shows.preview_error != "":
+		_preview_note.text = "Couldn't turn on: " + Shows.preview_error
+	elif not Shows.preview_listening:
 		_preview_note.text = "Off. Turn on to let the Godot editor's Light Show dock light the LEDs while you edit a show."
 	elif Shows.is_previewing():
 		_preview_note.text = "The editor at %s is driving the lights." % Shows.preview_peer

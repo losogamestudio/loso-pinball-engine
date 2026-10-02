@@ -16,16 +16,16 @@ tracks/0/keys = {
 "times": PackedFloat32Array(0, 1, 2, 3),
 "transitions": PackedFloat32Array(1, 1, 1, 1),
 "values": [{
-"args": [&"playfield", "RAINBOW", Color(1, 1, 1, 1), 2000, Color(0, 0, 0, 1)],
+"args": [&"playfield", "SOLID", Color(0.125, 1, 0, 1), 2000, Color(0, 0, 0, 1)],
 "method": &"cue"
 }, {
 "args": [&"playfield", "CHASE", Color(0, 1, 1, 1), 100, Color(0, 0, 0, 1)],
 "method": &"cue"
 }, {
-"args": [&"playfield", "BLINK", Color(1, 0, 1, 1), 125, Color(0, 0, 0, 1)],
+"args": [&"playfield", "BLINK", Color(0.33152574, 0.031372543, 0.42745098, 1), 125, Color(0, 0, 0, 1)],
 "method": &"cue"
 }, {
-"args": [&"playfield", "WIPE", Color(1, 0.64705884, 0, 1), 900, Color(0, 0, 0, 1)],
+"args": [&"playfield", "WIPE", Color(0, 1, 0.109375, 1), 900, Color(0, 0, 0, 1)],
 "method": &"cue"
 }]
 }

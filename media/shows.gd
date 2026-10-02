@@ -41,6 +41,8 @@ var clock_override := Callable()
 var preview_listening := false
 ## Who's previewing now ("ip:port"), or "" when nobody is.
 var preview_peer := ""
+## Why listening failed last time ("" = it didn't), for the Audio & Video tab.
+var preview_error := ""
 ## The UDP port to listen on. Tests change it, so they don't clash with a running game.
 var preview_port := PREVIEW_PORT
 
@@ -271,10 +273,12 @@ func set_preview_listening(on: bool, remember := true) -> void:
 		cfg.save(SETTINGS_PATH)
 	if on == (_preview_udp != null):
 		return
+	preview_error = ""
 	if on:
 		_preview_udp = PacketPeerUDP.new()
 		var err := _preview_udp.bind(preview_port)
 		if err != OK:
+			preview_error = "UDP port %d is busy: another copy of the game is probably still running. Close it, then try again." % preview_port
 			push_warning("Shows: can't listen for the show preview on UDP port %d (error %d). Is another copy of the game running?" % [preview_port, err])
 			_preview_udp = null
 			preview_listening = false
