@@ -75,7 +75,7 @@ res://
 ├── assets/                   # sfx/, music/, video/, shows/ — NOT in git except README, shows/_template.tscn + test/ folders (synced PC → Pi)
 ├── default_bus_layout.tres   # audio buses: Master ← Music, SFX, Video
 ├── tools/make_test_sounds.gd # writes the generated test sounds in assets/**/test/
-├── tools/convert_videos.ps1  # Resolve/any export → .ogv (Theora) in assets/video, Pi-friendly settings (needs ffmpeg)
+├── tools/convert_videos.ps1  # Resolve/any export → .ogv (Theora) in assets/video, Pi-friendly settings (needs ffmpeg); -PreviewAudio also writes assets/shows/<name>_preview.ogg for a video show's SongPreview track
 ├── tools/make_show_template.gd # writes assets/shows/_template.tscn and the demo show assets/shows/test/test_loop_a.tscn
 ├── main.tscn / main.gd       # Base scene (the main scene): always loaded, hosts modes + service page
 ├── modes/                    # Mode scenes swapped into Main's ModeHost: attract.tscn/.gd (title, Start game, Service),

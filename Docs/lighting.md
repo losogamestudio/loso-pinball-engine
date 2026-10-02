@@ -124,6 +124,20 @@ Godot doesn't call Call Method keys while you preview an animation in the editor
 - It's plain UDP on port 4777 on your local network, and the game only listens while **Show preview** is on. It controls lights only, never coils.
 - A running show stops when the editor starts sending, so the two don't fight.
 
+### Shows for a video
+
+A cutscene can have a light show too. It's the same scene, the same keys and the same dock, with these differences:
+
+- **Name and sync:** name the show like the video (`assets/shows/intro.tscn` goes with `assets/video/intro.ogv`) and set **Sync To** on the LightShow root to **video**. `Media.play_video(&"intro")` starts it, the cues follow the video's playback position, and it stops when the video ends or is skipped.
+- **Testing on the machine:** **Video → Play** on the Audio & Video tab plays the video with its show. (**Show → Play** doesn't start a video, so a video show would just wait.)
+- **The timeline can't show video**, only audio. So put the video's **soundtrack** on the **SongPreview** track instead, for its sound and waveform:
+  - Convert with `-PreviewAudio`, which also writes `assets/shows/intro_preview.ogg`:
+    ```sh
+    .\tools\convert_videos.ps1 -Source D:\Videos\resolve_exports -PreviewAudio
+    ```
+  - Put `intro_preview.ogg` on the SongPreview audio key, as in step 2 above.
+- **Moments without a sound** (a cut, a flash): take the time from Resolve's timecode. At 30 fps, frame N is N ÷ 30 seconds, so 00:00:04:15 is 4.5 s.
+
 ### Keeping it in sync
 
 **How the clock works:**

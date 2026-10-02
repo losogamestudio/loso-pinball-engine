@@ -1,6 +1,8 @@
 extends SceneTree
 ## Headless check of LED lights through PinballIO and of light shows, using a
-## fake board and the demo show in git (assets/shows/test/test_loop_a.tscn).
+## fake board and the demo show (assets/shows/test/test_loop_a.tscn), built in
+## memory from tools/make_show_template.gd, so edits saved to the demo file in
+## the editor don't change what's tested.
 ##
 ##     godot --headless --path . -s res://test/test_shows.gd
 ##
@@ -12,6 +14,7 @@ var _io: Node
 var _media: Node
 var _shows: Node
 var _clock := -1.0   ## the fake song position the show follows
+var _demo: PackedScene   ## the generated demo show, standing in for the file (kept referenced)
 
 const TEST_PREVIEW_PORT := 47770   ## the show-preview test's port, away from a running game's 4777
 
@@ -66,6 +69,12 @@ func _run() -> void:
 	var saved_layout: Dictionary = _config.snapshot()
 	var default_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://config/machine_config.default.json"))
 	_config.restore(default_data, false)
+	# The demo as generated, in place of whatever is saved in the file: taking
+	# over its path puts it in Godot's resource cache, so load() of that path
+	# (as Shows does) returns this one. Nothing is written to disk.
+	_demo = load("res://tools/make_show_template.gd").demo_scene()
+	_demo.take_over_path(load("res://tools/make_show_template.gd").DEMO_PATH)
+	_shows.rescan()
 
 	var board := _test_lights_on_board()
 	await _test_show_cues_and_clock(board)
@@ -182,7 +191,7 @@ func _test_editor_preview() -> void:
 	_shows.set_preview_listening(true, false)   # false: don't save it in user://
 	_check(_shows.preview_listening, "game listens for the show preview on UDP %d" % _shows.preview_port)
 
-	var show_scene: Node = (load("res://assets/shows/test/test_loop_a.tscn") as PackedScene).instantiate()
+	var show_scene: Node = _demo.instantiate()
 	var player: AnimationPlayer = show_scene.get_node("AnimationPlayer")
 	# Outside the editor a playing player would call cue() itself; we only want its playhead.
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL

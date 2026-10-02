@@ -89,6 +89,8 @@ The script's settings:
 .\tools\convert_videos.ps1 -Source D:\Videos\resolve_exports -Height 480 -Force
 ```
 
+**Light show for a video?** Add `-PreviewAudio`: it also writes each video's soundtrack as `assets/shows/<name>_preview.ogg`, to put on the show's SongPreview track. The timeline can't show video, but you can hear it and see its waveform. See [Lighting: Shows for a video](lighting.md#shows-for-a-video).
+
 See also [Raspberry Pi: the open risk](raspberry-pi.md#the-open-risk-video-cutscenes).
 
 ## Getting media from the PC to the Pi
@@ -108,6 +110,8 @@ The GitHub repo is public and some media is licensed, so **media isn't in git**.
    *.import
    // the test media comes with git
    test
+   // video soundtracks for editing light shows (convert_videos.ps1 -PreviewAudio); the Pi doesn't need them
+   *_preview.ogg
    ```
 
 **On the Pi** (over SSH):
