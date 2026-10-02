@@ -187,6 +187,53 @@ class LightDef:
 		return l
 
 
+## How a servo ramp moves: LINEAR = constant speed, SMOOTH = eases in and out.
+const SERVO_EASES: Array[String] = ["LINEAR", "SMOOTH"]
+const SERVO_LOWEST_US := 500    ## hard limits for any servo pulse (the board checks them too)
+const SERVO_HIGHEST_US := 2500
+
+
+## One hobby servo: on a board output pin, or on a channel of a PCA9685
+## servo board (I2C). Positions are 0..1 of its min_us..max_us pulse range.
+class ServoDef:
+	var name: StringName             ## e.g. &"ramp_diverter"
+	var board: StringName = &"main"
+	var pin: int = -1                ## board output pin, or -1 if it's on a PCA9685
+	var pca_addr: int = 0x40         ## PCA9685 I2C address (0x40..0x7F), when pin is -1
+	var channel: int = 0             ## PCA9685 channel 0..15
+	var min_us: int = 1000           ## pulse width at position 0
+	var max_us: int = 2000           ## pulse width at position 1
+	var home: float = 0.5            ## where it goes at power-up / new layout, 0..1
+
+	func on_pca() -> bool:
+		return pin < 0
+
+	## Where it's wired, short: "pin 5" or "PCA 0x40 ch 3".
+	func output_text() -> String:
+		return "PCA 0x%02X ch %d" % [pca_addr, channel] if on_pca() else "pin %d" % pin
+
+	func to_dict() -> Dictionary:
+		var d := {"name": String(name), "board": String(board), "min_us": min_us, "max_us": max_us, "home": home}
+		if on_pca():
+			d["pca_addr"] = pca_addr
+			d["channel"] = channel
+		else:
+			d["pin"] = pin
+		return d
+
+	static func from_dict(d: Dictionary) -> ServoDef:
+		var s := ServoDef.new()
+		s.name = StringName(d.get("name", ""))
+		s.board = StringName(d.get("board", "main"))
+		s.pin = int(d.get("pin", -1))
+		s.pca_addr = int(d.get("pca_addr", 0x40))
+		s.channel = int(d.get("channel", 0))
+		s.min_us = int(d.get("min_us", 1000))
+		s.max_us = int(d.get("max_us", 2000))
+		s.home = float(d.get("home", 0.5))
+		return s
+
+
 ## What one board gets told: its CFG lines, plus which name sits at each
 ## local index (the board only knows numbers, game code only knows names).
 class BoardPlan:
@@ -196,5 +243,6 @@ class BoardPlan:
 	var lamp_names: Array[StringName] = []    ## index = board's lamp number
 	var chain_names: Array[StringName] = []   ## index = board's LED chain number
 	var light_names: Array[StringName] = []   ## index = board's zone number
+	var servo_names: Array[StringName] = []   ## index = board's servo number
 	var lines: PackedStringArray = []         ## CFG lines, in order, ending with CFG DONE
 	var fingerprint: String = ""              ## layout hash, same as the board reports

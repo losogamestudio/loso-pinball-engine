@@ -1,6 +1,6 @@
-# Lighting: WS2812B LED chains and light shows
+# Lighting: WS2812B LED chains and shows
 
-Playfield lighting is **WS2812B LED strips** (addressable RGB LEDs), driven by the Teensy. This page covers wiring them, setting them up in the service menu, controlling them from game code, and making **light shows** that run in sync with a song or a video.
+Playfield lighting is **WS2812B LED strips** (addressable RGB LEDs), driven by the Teensy. This page covers wiring them, setting them up in the service menu, controlling them from game code, and making **shows** that run in sync with a song or a video. Shows can also move servos ([Servos](servos.md)) and pulse coils.
 
 **How the work is split** (the same rule as the coils): the **Teensy draws the effects**, about 60 frames a second, so they stay smooth whatever Godot is doing. Godot only sends a short line when a light should change, like "playfield: red chase, 120 ms". It never streams pixels.
 
@@ -11,7 +11,7 @@ Playfield lighting is **WS2812B LED strips** (addressable RGB LEDs), driven by t
 | **Chain** | One strip, or several soldered end to end, on one Teensy output pin. Up to 4 chains of up to 300 LEDs on a Teensy 4.1. |
 | **Light** | A named range of LEDs on a chain: a single insert (1 LED), a section, or the whole strip. Up to 96 per board. Game code and shows use the names. |
 | **Effect** | What a light shows right now, drawn by the board (table below). |
-| **Show** | A timed list of light cues, made on Godot's timeline, that plays along with a song or video. |
+| **Show** | A timed list of cues (light effects, servo moves, coil pulses), made on Godot's timeline, that plays along with a song or video. |
 
 Lights may **overlap**. The board draws smaller lights over bigger ones, so an insert inside a "whole playfield" light still shows its own effect. A light set to `OFF` is see-through: whatever is under it shows. To force LEDs dark, use `SOLID` with black.
 
@@ -66,9 +66,9 @@ PinballIO.all_lights_off()
 
 Like rules and lamps, PinballIO remembers what each light should show, and sends it again after a board reconnects or after a watchdog trip (which turns every LED off).
 
-## Light shows
+## Shows: lights, servos and coils
 
-A show is a small scene in `assets/shows/`, named like the song or video it goes with:
+A show is a timeline of **cues**: light effects, servo moves and coil pulses. It's a small scene in `assets/shows/`, named like the song or video it goes with:
 - **Starts by itself:** `assets/shows/attract.tscn` runs whenever `assets/music/attract.ogg` plays, and stops with it.
 - **Plays from the service menu:** Service → **Audio & Video** → **Media** → **Show** → **Play**.
 - **From game code:** `Shows.play_show(&"name")`.
@@ -79,7 +79,15 @@ Shows sit with the media, so they **sync to the Pi like the media** and aren't c
 
 ### Making a show in the Godot editor
 
-A show is an **AnimationPlayer** timeline, much like Unreal's Sequencer. Each key on it calls a method named for its **cue type** with one light's new effect, so it reads `light(&"playfield", "BLINK", …)` on the timeline. Light cues are the only type so far; coil and servo cues will be added the same way. (Shows made before cue types used `cue(...)`, which still works.)
+A show is an **AnimationPlayer** timeline, much like Unreal's Sequencer. Each key on it calls a method named for its **cue type**, so the timeline reads what it does:
+
+| Cue | Key | What it does |
+|---|---|---|
+| Light | `light(&"playfield", "BLINK", color, ms, color2)` | Starts an effect on an LED light. The light keeps it until its next key. |
+| Servo | `servo(&"ramp_gate", 0.8, 600, "SMOOTH")` | Moves a servo to a position (0..1 of its range) over the ramp time in ms; `LINEAR` = steady, `SMOOTH` = eases in and out. The board runs the move. It stays there until its next key. |
+| Coil | `coil(&"shaker", 40, 30)` | Pulses a coil once: ms (0 = the coil's own pulse time, max 255) and power % (below 100 is a softer PWM pulse, which needs a PWM pin). |
+
+Lights and servos are **states**: at any moment each follows its latest key, so scrubbing shows the right picture. Coils are **events**: a pulse happens when the clock passes its key. (Shows made before cue types used `cue(...)` for lights, which still works.)
 
 **Too much text on the keys?** The Animation panel draws every argument after the method name, cut off at the next key. The dock shows the settings anyway, so you can hide the key text with the Animation panel's **Toggle method names** button (the method icon in its toolbar).
 
@@ -91,14 +99,17 @@ A show is an **AnimationPlayer** timeline, much like Unreal's Sequencer. Each ke
 3. **Set the length.** Set the animation **length** (the box at the top right of the Animation panel, in seconds) to the song's length. Turn **looping** on if the song loops.
 4. **Add cues with the Light Show dock** (right side of the editor, under the Inspector; see [below](#the-light-show-dock-live-preview-in-the-editor)).
    1. Move the playhead to the beat.
-   2. Each light has a row under **Lights at the playhead**: a swatch, the light's **name** with a **▾** picker, which key it's following (**@2.00 s**, **here**, or **no key**), **+** and **✕**, then its **effect**, **color**, **color 2** and **speed** (ms).
-   3. **+** adds a new key at the playhead for that light, a copy of the row's settings. Then change the effect, colors or speed in the row: that edits the key. The key goes on the light's own track, which the dock makes the first time.
-   4. Changing a row's fields **edits the key the light is following**, even when that key is earlier than the playhead (the row says which). A light with **no key yet** gets one at the playhead. **✕** deletes the key. Ctrl+Z undoes any of it, and dragging a color is one undo step.
-   5. **Key all** (next to the **Lights at the playhead** heading) adds a key at the playhead on every light that's following one, with the settings it has now, so nothing changes until you edit a row. Handy at the start of a new section of the song. Lights already on a key there, or with no key yet, are left alone. One Ctrl+Z undoes it.
-   6. **Renaming:** type a new name in a row and press Enter, or pick one of the machine's lights from **▾**. Every key of that light gets the new name (the first argument of its keys). A key you insert by hand on the timeline starts with no name and shows up as a **(no name)** row, ready to name this way. Spaces become `_`.
+   2. Under **At the playhead**, every light, servo and coil has a row (grouped **Lights**, **Servos**, **Coils**): its **name** with a **▾** picker, which key it's following (**@2.00 s**, **here**, or **no key**), **+** and **✕**, then its settings:
+      - **Light:** a swatch, **effect**, **color**, **color 2** and **speed** (ms).
+      - **Servo:** **position** (a slider, 0-100 %), **ramp** (ms) and **Linear / Smooth**.
+      - **Coil:** pulse **ms** (0 = the coil's own), **power** % and **Fire**, which pulses the real coil now (with Send to game on).
+   3. **+** adds a new key at the playhead, a copy of the row's settings. Then change the settings in the row: that edits the key. The key goes on that light's (servo's, coil's) own track, which the dock makes the first time.
+   4. Changing a row's fields **edits the key the row is following**, even when that key is earlier than the playhead (the row says which). With **no key yet**, one is added at the playhead. **✕** deletes the key. Ctrl+Z undoes any of it, and dragging a color or the servo slider is one undo step.
+   5. **Key all** (next to the **At the playhead** heading) adds a key at the playhead on every light and servo that's following one, with the settings it has now, so nothing changes until you edit a row. Handy at the start of a new section of the song. Ones already on a key there, or with no key yet, are left alone, and so are coils (they're pulses). One Ctrl+Z undoes it.
+   6. **Renaming:** type a new name in a row and press Enter, or pick one of the machine's lights (servos, coils) from **▾**. Every key of that one gets the new name (the first argument of its keys). A key you insert by hand on the timeline starts with no name and shows up as a **(no name)** row, ready to name this way. Spaces become `_`.
    - Move or copy keys on the timeline as usual. Selecting a key there and editing its arguments in the **Inspector** works too.
-   - **By hand, without the dock:** **Add Track → Call Method Track** → the **LightShow** root node, one track per light (a track holds one key at each moment, so two lights changing together need two tracks). Right-click the track → **Insert Key** → **`light`**, then fill in **light**, **effect**, **color**, **ms**, **color2** in the Inspector.
-5. **Watch it on the real LEDs** while you work: see the next section.
+   - **By hand, without the dock:** **Add Track → Call Method Track** → the **LightShow** root node, one track per light, servo or coil (a track holds one key at each moment, so two changing together need two tracks). Right-click the track → **Insert Key** → **`light`**, **`servo`** or **`coil`**, then fill in its arguments in the Inspector.
+5. **Watch it on the real machine** while you work: see the next section.
 6. **Pick what it follows.** Select the **LightShow** root node. In the Inspector, **Sync To** is `music` (the song with the same name, the usual case), `video` (a cutscene with the same name), or `none` (its own clock from when it starts).
 7. **Save, sync to the Pi, and play it.** Restarting the game with the **Loso Pinball** icon imports it, or tap **Rescan** on the Audio & Video tab. Then play it from the Audio & Video tab or start its song.
 
@@ -106,22 +117,23 @@ The template, the demo, and `media/light_show.gd` all follow this layout. To reg
 
 ### The Light Show dock: live preview in the editor
 
-Godot doesn't call Call Method keys while you preview an animation in the editor, so on its own the timeline can't light anything. Our editor plugin, **Loso Show Tools** (`addons/loso_show_tools/`, enabled in **Project → Project Settings → Plugins**), adds a **Light Show** dock (right side, under the Inspector) that fills the gap. Can't see it? Check the plugin is on in Project Settings → Plugins, or turn it off and on again there; you can drag the dock anywhere. It reads the cue keys itself, works out what every light is doing at the playhead, and:
+Godot doesn't call Call Method keys while you preview an animation in the editor, so on its own the timeline can't light or move anything. Our editor plugin, **Loso Show Tools** (`addons/loso_show_tools/`, enabled in **Project → Project Settings → Plugins**), adds a **Light Show** dock (right side, under the Inspector) that fills the gap. Can't see it? Check the plugin is on in Project Settings → Plugins, or turn it off and on again there; you can drag the dock anywhere. It reads the cue keys itself, works out what every light and servo is doing at the playhead, and:
 
-- **Shows it in the dock:** one row per light with its swatch and its settings, while you play or scrub. Edits in a row show on the LEDs as you make them.
-- **Sends it to the running game** with **Send to game** on. The game passes each change to the board, so **the real LEDs follow the playhead**. Dragging the playhead backwards or jumping around sends each light's state at the new spot, so you can step through a show beat by beat.
+- **Shows it in the dock:** one row per light, servo and coil with its settings, while you play or scrub. Edits in a row show on the machine as you make them.
+- **Sends it to the running game** with **Send to game** on. The game passes each change to the board, so **the real LEDs and servos follow the playhead**. Dragging the playhead backwards or jumping around sends each light's and servo's state at the new spot, so you can step through a show beat by beat.
+- **Coils only with "Fire coils while playing" ticked**, and then **only while the editor plays forward past a coil key**. Scrubbing, jumping and sitting on a key never pulse a coil: they're real solenoids. The box is off every time the editor starts. A coil row's **Fire** button pulses it on demand.
 
 **Setting it up:**
 1. Start the game with the board connected: on this PC (F5 in the editor, Teensy on USB) or on the Pi.
 2. In the game: **Service → Audio & Video → Media → Show preview from the editor** on. It's saved, so this is once per machine. The note under it shows this machine's IP address.
-3. In the editor's Light Show dock: **Game at** `127.0.0.1` for a game on this PC, or the Pi's IP (or its name, e.g. `loso-pi.local`). Turn **Send to game** on. The dock says **Game answering: N lights** when it's connected.
-4. Open your show, pick the `show` animation in the Animation panel, and play or scrub. The song plays from the editor on your PC, and the lights follow on the machine.
+3. In the editor's Light Show dock: **Game at** `127.0.0.1` for a game on this PC, or the Pi's IP (or its name, e.g. `loso-pi.local`). Turn **Send to game** on. The dock says **Game answering: N lights, N servos, N coils** when it's connected.
+4. Open your show, pick the `show` animation in the Animation panel, and play or scrub. The song plays from the editor on your PC, and the lights and servos follow on the machine. Tick **Fire coils while playing** when you want the coils too.
 
 **Good to know:**
-- The light list in the dock comes from the game (or from this PC's machine config if the game isn't answering). A light the show uses that the game doesn't have is listed in red.
-- **Resend** sends every light again (e.g. if the game restarted; the dock also does this by itself when the game comes back).
+- The lists in the dock come from the game (or from this PC's machine config if the game isn't answering). A light, servo or coil the show uses that the game doesn't have is listed in red.
+- **Resend** sends every light and servo again (e.g. if the game restarted; the dock also does this by itself when the game comes back).
 - Leaving the show, or turning **Send to game** off, turns the lights off.
-- It's plain UDP on port 4777 on your local network, and the game only listens while **Show preview** is on. It controls lights only, never coils.
+- It's plain UDP on port 4777 on your local network, and the game only listens while **Show preview** is on. It drives lights and servos, and coils only as described above.
 - A running show stops when the editor starts sending, so the two don't fight.
 
 ### Shows for a video
@@ -144,10 +156,11 @@ A cutscene can have a light show too. It's the same scene, the same keys and the
 - The show's clock is the song's **actual playback position**, as heard from the speakers, or the video's position.
 - If the Pi stutters, the next cues catch up instead of drifting.
 - When the song loops, the cues start over.
+- **Coils never fire late.** When a show starts partway into its song (or loops), lights and servos catch up to where the song is, but a coil key more than 0.15 s in the past is skipped, so you never get a burst of old pulses.
 
 **Lining it up by ear:** if the lights run ahead of or behind the music on the real machine, move **Light sync** on the Audio & Video tab (−300…+300 ms). Moving it right makes the lights later. The setting is saved on this machine.
 
-**When a show stops:** it turns off the lights it used, and leaves the others alone.
+**When a show stops:** it turns off the lights it used, and leaves the others alone. Servos stay where they are.
 
 ## Testing without Godot (Serial Monitor)
 

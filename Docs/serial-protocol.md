@@ -1,4 +1,4 @@
-# Serial protocol (v0.3)
+# Serial protocol (v0.4)
 
 The boards and Godot talk over USB serial using plain ASCII text: one message per line, ending in `\n`, tokens separated by single spaces. It's deliberately human-readable. You can plug into a board with a plain serial monitor (the Arduino IDE's, `screen`, `minicom`, whatever) and type commands by hand, or just watch traffic scroll by. A binary framing (COBS + CRC) is a possible future step, but not yet.
 
@@ -6,13 +6,14 @@ The boards and Godot talk over USB serial using plain ASCII text: one message pe
 
 ## The big idea: the board is told what it is
 
-The firmware (`PINIO 0.3`) is **generic**. It knows only what each of its own pins *can* do: input, output, or PWM-capable output (that's `Firmware/pinio/board_teensy41.h`). It doesn't know it's driving a flipper or reading a slingshot switch.
+The firmware (`PINIO 0.4`) is **generic**. It knows only what each of its own pins *can* do: input, output, or PWM-capable output (that's `Firmware/pinio/board_teensy41.h`). It doesn't know it's driving a flipper or reading a slingshot switch.
 
 Godot tells it. After every `HELLO`, Godot sends the layout from the [machine config](configuration.md) as a series of `CFG` lines:
 
 - **Inputs** get a number, a pin, NO/NC, and a debounce time.
 - **Coils** get a number, a pin, full-power time, hold %, an optional trigger input, an optional end-of-stroke (EOS) input, and a recycle time.
 - **Lamps** get a number and a pin.
+- **LED chains**, **lights**, **PCA9685 servo boards** and **servos** get theirs too (below).
 
 From then on, everything on the wire uses those **numbers**. Only Godot knows the **names**: input 0 on the board is `flipper_left_button` in game code.
 
@@ -31,8 +32,8 @@ To keep the board and Godot from disagreeing, every layout has a **fingerprint**
 | Family | Direction | Messages |
 |---|---|---|
 | Link | both | `HELLO`, `HB`, `PING`/`PONG`, `WD TRIP`/`WD OK` |
-| Config | Godot → board | `CFG CLEAR`, `CFG PWM`, `CFG IN`, `CFG COIL`, `CFG LAMP`, `CFG CHAIN`, `CFG ZONE`, `CFG DONE`, `CFG SAVE`, `CFG ERASE` |
-| Commands | Godot → board | `PULSE`, `HOLD`, `RULE`, `LED`, `FX`, `BRIGHT`, `SWS` |
+| Config | Godot → board | `CFG CLEAR`, `CFG PWM`, `CFG IN`, `CFG COIL`, `CFG LAMP`, `CFG CHAIN`, `CFG ZONE`, `CFG PCA`, `CFG SERVO`, `CFG DONE`, `CFG SAVE`, `CFG ERASE` |
+| Commands | Godot → board | `PULSE`, `HOLD`, `RULE`, `LED`, `FX`, `BRIGHT`, `SERVO`, `SWS` |
 | Events | board → Godot | `SWS`, `SW`, `FIRED` |
 | Replies | board → Godot | `ACK ...`, `ERR ...` |
 
@@ -50,6 +51,8 @@ Every coil runs the same little state machine **on the board**. Godot configures
 
 A coil with no trigger is fired only by Godot: `PULSE` (once) or `HOLD ON`/`HOLD OFF` (diverters, magnets).
 
+`PULSE <coil> <ms> <power>` with power below 100 % pulses with PWM instead of full on: a softer kick, for a toy or a gentle shake (like MPF's `pulse_power`). It needs a PWM-capable pin.
+
 ## LED chains: the board draws, Godot cues
 
 WS2812B strips work the same way. Godot tells the board where they are, and then only sends short cues:
@@ -61,11 +64,21 @@ WS2812B strips work the same way. Godot tells the board where they are, and then
 
 The watchdog, `HELLO` and `CFG SAVE` turn every zone off, like coils and lamps, and PinballIO re-sends the wanted effects. See [Lighting](lighting.md) for wiring and light shows.
 
+## Servos: the board runs the ramp
+
+Hobby servos follow the same idea: Godot says where to go and how fast, the board does the moving.
+
+- `CFG PCA <pca> <addr>` defines a PCA9685 16-channel servo board on the I2C bus (pins 18/19), at a hex address `40`..`7F`. The board checks that something answers there.
+- `CFG SERVO <servo> <out> <min_us> <max_us> <home>` defines a servo on an output pin (`5`) or a PCA channel (`P0:3` = PCA 0, channel 3), with its pulse range in microseconds and its home position in per mille (0..1000) of that range. Godot numbers the PCAs by address, lowest first.
+- `SERVO <servo> <pos> [ms] [LINEAR|SMOOTH]` moves it to pos (0..1000) over ms, at a steady speed or easing in and out. The board updates the servo every 10 ms.
+
+At `CFG DONE` every servo goes to its home position. The watchdog, `HELLO` and `CFG SAVE` stop every move, and each servo **holds where it is** (nothing moves while nobody's in control). After `WD OK`, PinballIO eases each servo back to where game code wants it. See [Servos](servos.md) for wiring.
+
 ## A typical session
 
 ```
 Godot:  HELLO
-Board:  HELLO PINIO 0.3 TEENSY41 12345670 - -   # firmware, board type, serial number,
+Board:  HELLO PINIO 0.4 TEENSY41 12345670 - -   # firmware, board type, serial number,
                                           # running + burned fingerprints ("-" = blank board)
 Godot:  CFG CLEAR                         # config lines go one at a time,
 Board:  ACK CFG CLEAR                     # each waiting for its ACK
@@ -92,7 +105,7 @@ Board:  ACK CFG ZONE 0
 Godot:  CFG ZONE 1 0 0 1                  # zone 1 = shoot_again (LED 0), drawn on top
 Board:  ACK CFG ZONE 1
 Godot:  CFG DONE
-Board:  ACK CFG 3 3 1 1 2 4AC3701E        # 3 inputs, 3 coils, 1 lamp, 1 chain, 2 zones, fingerprint
+Board:  ACK CFG 3 3 1 1 2 0 4AC3701E      # 3 inputs, 3 coils, 1 lamp, 1 chain, 2 zones, 0 servos, fingerprint
 Board:  SWS 000                           # every input's state, so Godot starts in sync
 Godot:  HB                                # every 100 ms from here on
 Board:  HB 41213                          # every 1 s from here on
@@ -128,7 +141,7 @@ Godot:  RULE ALL ON                       # PinballIO re-arms what the game want
 Board:  ACK RULE ALL ON
 ...                                       # power off, power on: the board replays its EEPROM
 Godot:  HELLO
-Board:  HELLO PINIO 0.3 TEENSY41 12345670 4AC3701E 4AC3701E   # already running the burned layout
+Board:  HELLO PINIO 0.4 TEENSY41 12345670 4AC3701E 4AC3701E   # already running the burned layout
 Godot:  SWS                               # fingerprint matches Godot's: nothing to send
 Board:  SWS 000
 ```
@@ -137,7 +150,7 @@ Board:  SWS 000
 
 There are two independent timeouts, one on each side, and they matter for different failure modes:
 
-- **The board's watchdog (500 ms).** If it hears nothing from Godot for 500 ms, it immediately turns off every coil and lamp, disarms every rule, and sends `WD TRIP`. This protects the hardware if Godot crashes, hangs, or the USB cable comes loose: outputs fail to "off", never "stuck on". The config is kept. The next line the board receives clears the trip (`WD OK`), but **outputs stay off**. `PinballIO` remembers which rules and lamps game code wants, and re-sends them by itself after `WD OK` and after every (re)config.
+- **The board's watchdog (500 ms).** If it hears nothing from Godot for 500 ms, it immediately turns off every coil, lamp and LED zone, disarms every rule, stops every servo move (servos hold where they are), and sends `WD TRIP`. This protects the hardware if Godot crashes, hangs, or the USB cable comes loose: outputs fail to "off", never "stuck on". The config is kept. The next line the board receives clears the trip (`WD OK`), but **outputs stay off**. `PinballIO` remembers which rules and lamps game code wants, and re-sends them by itself after `WD OK` and after every (re)config.
 - **Godot's link-lost detection (3 s).** If Godot hears nothing from a board for 3 seconds, it considers the link lost and starts retrying `HELLO` once a second until the board answers. The answer triggers a full re-config.
 
 Why the asymmetry (500 ms vs. 3 s)? The board's watchdog is a hardware-safety mechanism, so it needs to be fast: "outputs stay on for an extra 2.5 seconds" is a real problem for a solenoid. Godot's detection only governs UI and state (showing "link lost", retrying), so there's no hardware risk in waiting longer there.
@@ -151,9 +164,12 @@ Why the asymmetry (500 ms vs. 3 s)? The board's watchdog is a hardware-safety me
 | `ERR CFG locked, send CFG CLEAR first` | Config lines arrived after `CFG DONE`. Godot always sends `CFG CLEAR` first, so this only happens when typing by hand. |
 | `ERR not configured, send CFG first` | A `PULSE`/`RULE`/`LED` arrived before `CFG DONE`. |
 | `ERR coil busy` | `PULSE` while the coil is firing, holding, or in its recycle time. |
+| `ERR coil needs a PWM pin for power` | `PULSE` with power below 100 % on a pulse-only pin. |
+| `ERR CFG PCA9685 doesn't answer at that address ...` | `CFG PCA` found nothing at that I2C address: check SDA (18), SCL (19), the PCA's VCC and ground, and its address jumpers. |
+| `ERR PCA <n> lost, its servos stop until the next CFG DONE` | A PCA9685 stopped answering while running (cable, power). The board stops talking to it so the rest keeps its timing. |
 | `ERR CFG nothing to save, send CFG DONE first` | `CFG SAVE` on a board that isn't running a complete layout. |
-| `ERR CFG layout too big to store on this board` | The layout text doesn't fit the board's storage (3 KB on a Teensy 4.1, far more than 24 + 24 + 24 items need). |
+| `ERR CFG layout too big to store on this board` | The layout text doesn't fit the board's storage (about 4 KB on a Teensy 4.1, far more than a full machine needs). |
 
 ## Versioning
 
-The firmware string (`PINIO 0.3`) moves whenever the protocol shape changes. Bump it in the same change that touches `pinio.ino`, `board_link.gd`/`pinball_io.gd`, and the `CLAUDE.md` table, and update `BoardTypes.FIRMWARE` to match. Godot refuses to configure a board that reports a different version, and says so in the diagnostics log.
+The firmware string (`PINIO 0.4`) moves whenever the protocol shape changes. Bump it in the same change that touches `pinio.ino`, `board_link.gd`/`pinball_io.gd`, and the `CLAUDE.md` table, and update `BoardTypes.FIRMWARE` to match. Godot refuses to configure a board that reports a different version, and says so in the diagnostics log.

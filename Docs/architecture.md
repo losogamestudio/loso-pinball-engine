@@ -21,12 +21,13 @@ So: **Teensy 4.x** for problem 1, **Godot 4 (GDScript)** for problem 2, talking 
 - **Slingshots and pop bumpers, as local hardware rules.** The pattern is: switch closes → the Teensy fires the coil *immediately*, in the same firmware pass → *then* it tells Godot `FIRED <coil>` after the fact. Godot finds out a slingshot fired; it never causes one to fire. This matters because a slingshot needs to respond faster than a round-trip over serial plus a game-engine frame can reliably guarantee, and because losing the serial link should never mean losing slingshots (or, from a safety standpoint, should mean the opposite — see the watchdog below).
 - **Switch debouncing.** Raw switch input is noisy; the Teensy is the one place that turns "raw" into a clean `SW <id> <0|1>` transition, so Godot only ever sees stable state changes.
 - **Coil safety.** Two independent mechanisms: a hard cap on every coil's pulse length (`MAX_PULSE_MS`, currently 255ms in the practice sketch) enforced in firmware regardless of what Godot asks for, and a **watchdog** that turns every output off and disables every hardware rule the moment Godot goes quiet for too long (500ms in the current protocol). Godot crashing, hanging, or a USB cable falling out should always fail toward "everything off," never toward "something stuck on."
+- **Anything that moves smoothly over time.** LED effects ([Lighting](lighting.md)) and servo ramps ([Servos](servos.md)) are drawn and stepped on the board, LEDs about 60 times a second and servos every 10 ms. Godot sends one short line per change ("servo 0 to 80 % over 600 ms, smoothly"), never a stream of frames, so a busy Pi or a slow USB link can't make them stutter. On the watchdog, servos stop and hold where they are.
 
 ## What Godot owns
 
 - **Configuring and arming hardware rules.** Godot *describes* each coil to the board (pin, full-power time, hold %, trigger input, EOS input, recycle time) from the [machine config](configuration.md), and arms or disarms its rule, for example off during tilt or between balls. It never fires a rule itself. The rule always runs on the board; Godot only decides what it looks like and whether it's currently armed.
 - **Scoring, modes, ball tracking, audio, video, and the UI.** All the parts of a pinball game that are really a game-engine problem, not a real-time-control problem.
-- **One-off output commands that aren't time-critical in the same way**: firing a kickout coil to launch a ball, resetting drop targets, setting lamp/LED state. These go out as explicit serial commands (`PULSE`, `LED`, ...) whenever Godot's game logic decides they should happen.
+- **One-off output commands that aren't time-critical in the same way**: firing a kickout coil to launch a ball, resetting drop targets, setting lamp/LED state, moving servos. These go out as explicit serial commands (`PULSE`, `LED`, `FX`, `SERVO`, ...) whenever Godot's game logic (or a show) decides they should happen.
 
 ## Game flow
 

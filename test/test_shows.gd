@@ -19,19 +19,19 @@ var _demo: PackedScene   ## the generated demo show, standing in for the file (k
 const TEST_PREVIEW_PORT := 47770   ## the show-preview test's port, away from a running game's 4777
 
 
-## A PINIO 0.3 board, just enough for lights: answers HELLO, ACKs config and commands.
+## A PINIO 0.4 board, just enough for lights, servos and coils: answers HELLO, ACKs config and commands.
 class FakeBoard:
 	var link: BoardLink
 	var received: PackedStringArray = []
 	var layout: PackedStringArray = []
-	var counts := {"IN": 0, "COIL": 0, "LAMP": 0, "CHAIN": 0, "ZONE": 0}
+	var counts := {"IN": 0, "COIL": 0, "LAMP": 0, "CHAIN": 0, "ZONE": 0, "PCA": 0, "SERVO": 0}
 
 	func handle(line: String) -> void:
 		received.append(line)
 		var parts := line.split(" ")
 		match parts[0]:
 			"HELLO":
-				reply("HELLO PINIO 0.3 TEENSY41 12345670 - -")
+				reply("HELLO PINIO 0.4 TEENSY41 12345670 - -")
 			"CFG":
 				if parts[1] == "CLEAR":
 					layout.clear()
@@ -39,8 +39,8 @@ class FakeBoard:
 						counts[key] = 0
 					reply("ACK CFG CLEAR")
 				elif parts[1] == "DONE":
-					reply("ACK CFG %d %d %d %d %d %s" % [counts["IN"], counts["COIL"], counts["LAMP"],
-							counts["CHAIN"], counts["ZONE"], load("res://config/machine_config.gd").layout_hash(layout)])
+					reply("ACK CFG %d %d %d %d %d %d %s" % [counts["IN"], counts["COIL"], counts["LAMP"],
+							counts["CHAIN"], counts["ZONE"], counts["SERVO"], load("res://config/machine_config.gd").layout_hash(layout)])
 					reply("SWS " + "0".repeat(counts["IN"]))
 				else:
 					counts[parts[1]] = counts.get(parts[1], 0) + 1
@@ -68,6 +68,11 @@ func _run() -> void:
 	_shows = root.get_node("Shows")
 	var saved_layout: Dictionary = _config.snapshot()
 	var default_data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://config/machine_config.default.json"))
+	# Plus two servos (the shipped layout has none): one on a pin, one on a PCA9685.
+	default_data["servos"] = [
+		{"name": "gate", "board": "main", "pin": 5, "min_us": 1000, "max_us": 2000, "home": 0.5},
+		{"name": "head", "board": "main", "pca_addr": 0x40, "channel": 0, "min_us": 600, "max_us": 2400, "home": 0.0},
+	]
 	_config.restore(default_data, false)
 	# The demo as generated, in place of whatever is saved in the file: taking
 	# over its path puts it in Godot's resource cache, so load() of that path
@@ -75,16 +80,21 @@ func _run() -> void:
 	_demo = load("res://tools/make_show_template.gd").demo_scene()
 	_demo.take_over_path(load("res://tools/make_show_template.gd").DEMO_PATH)
 	_shows.rescan()
+	var saved_offset: int = _shows.sync_offset_ms
+	_shows.sync_offset_ms = 0   # this machine's Light sync setting would shift every clock below (not saved)
 
 	var board := _test_lights_on_board()
+	_test_servos_and_coil_power(board)
 	await _test_show_cues_and_clock(board)
 	await _test_show_follows_music()
 	_test_show_cues_helpers()
-	await _test_editor_preview()
+	await _test_servo_and_coil_cues(board)
+	await _test_editor_preview(board)
 
 	_io.close_port()
 	board.link = null   # the fake board and its link point at each other; let them go
 	_config.restore(saved_layout, false)
+	_shows.sync_offset_ms = saved_offset
 	print("\n%s" % ("ALL PASSED" if _failures == 0 else "%d FAILURE(S)" % _failures))
 	quit(1 if _failures > 0 else 0)
 
@@ -127,6 +137,25 @@ func _test_lights_on_board() -> FakeBoard:
 	_check(_io.get_light(&"playfield")["effect"] == "OFF" and _io.get_light(&"shoot_again")["effect"] == "OFF",
 			"all_lights_off turns every light off")
 	return board
+
+
+func _test_servos_and_coil_power(board: FakeBoard) -> void:
+	_check(board.layout.has("CFG PCA 0 40") and board.layout.has("CFG SERVO 0 5 1000 2000 500")
+			and board.layout.has("CFG SERVO 1 P0:0 600 2400 0"), "board got the PCA and servo lines")
+	board.received.clear()
+	_io.set_servo(&"gate", 0.75, 400, "SMOOTH")
+	_check(board.received == PackedStringArray(["SERVO 0 750 400 SMOOTH"]), "set_servo sends a SERVO line: %s" % [board.received])
+	_check(_io.is_servo_moving(&"gate") and is_equal_approx(_io.get_servo(&"gate")["position"], 0.75),
+			"PinballIO remembers the move and knows it's running")
+	_check(_io.get_servo(&"head")["position"] == 0.0, "a servo that was never moved reports its home")
+	board.received.clear()
+	board.reply("WD TRIP")
+	board.reply("WD OK")
+	_check(board.received.has("SERVO 0 750 500 SMOOTH"), "after a watchdog trip the servo eases back where it was wanted: %s" % [board.received])
+	board.received.clear()
+	_io.pulse_coil(&"kickout", 20, 40)
+	_io.pulse_coil(&"kickout")
+	_check(board.received == PackedStringArray(["PULSE 2 20 40", "PULSE 2"]), "pulse_coil with power sends PULSE n ms power: %s" % [board.received])
 
 
 func _test_show_cues_and_clock(board: FakeBoard) -> void:
@@ -186,7 +215,7 @@ func _test_show_cues_helpers() -> void:
 
 ## The editor's Light Show dock, run outside the editor, talking to Shows over
 ## real UDP on this computer: scrubbing the timeline drives PinballIO's lights.
-func _test_editor_preview() -> void:
+func _test_editor_preview(board: FakeBoard) -> void:
 	_shows.preview_port = TEST_PREVIEW_PORT   # not the real one: a running game may hold it
 	_shows.set_preview_listening(true, false)   # false: don't save it in user://
 	_check(_shows.preview_listening, "game listens for the show preview on UDP %d" % _shows.preview_port)
@@ -209,7 +238,10 @@ func _test_editor_preview() -> void:
 	await _until(func() -> bool: return _io.get_light(&"playfield")["effect"] == "BLINK", 120)
 	_check(_io.get_light(&"playfield")["effect"] == "BLINK" and _io.get_light(&"shoot_again")["effect"] == "SOLID",
 			"lights follow the playhead at 2.1 s over UDP")
-	_check(dock._game_lights == PackedStringArray(["playfield", "shoot_again"]), "the game told the dock its lights: %s" % [dock._game_lights])
+	_check(dock._game_list(ShowCues.TYPE_LIGHT) == PackedStringArray(["playfield", "shoot_again"])
+			and dock._game_list(ShowCues.TYPE_SERVO) == PackedStringArray(["gate", "head"])
+			and dock._game_list(ShowCues.TYPE_COIL).has("kickout"),
+			"the game told the dock its lights, servos and coils: %s" % [dock._game_names])
 	_check(_shows.is_previewing(), "the game knows it's being previewed (%s)" % _shows.preview_peer)
 
 	player.seek(0.5, false)   # scrub back
@@ -280,7 +312,7 @@ func _test_editor_preview() -> void:
 	anim.track_set_path(blank_track, NodePath("."))
 	anim.track_insert_key(blank_track, 1.25, {"method": &"light", "args": [&"", "SOLID", Color.WHITE, 500, Color.BLACK]})
 	await _frames()
-	_check(dock._rows.has(&""), "a key with no light name gets its own row")
+	_check(dock.has_row(ShowCues.TYPE_LIGHT, &""), "a key with no light name gets its own row")
 	dock.rename_light(&"", "shoot again")
 	_check(anim.method_track_get_params(blank_track, 0)[0] == &"shoot_again",
 			"renaming it sets arg 0 (spaces become _): %s" % [anim.method_track_get_params(blank_track, 0)])
@@ -290,8 +322,47 @@ func _test_editor_preview() -> void:
 	_check(count_new >= 2 and count_renamed == count_new and ShowCues.read(anim).all(func(c: Dictionary) -> bool: return c["light"] != &"new_light"),
 			"renaming a light renames all %d of its keys" % count_new)
 	await _frames()
-	_check(dock._rows.has(&"flasher") and not dock._rows.has(&"new_light") and not dock._rows.has(&""),
+	_check(dock.has_row(ShowCues.TYPE_LIGHT, &"flasher") and not dock.has_row(ShowCues.TYPE_LIGHT, &"new_light")
+			and not dock.has_row(ShowCues.TYPE_LIGHT, &""),
 			"the rows follow the new names")
+
+	# Servo and coil cues from the dock.
+	player.seek(1.5, false)
+	await _frames()
+	dock.edit_servo_at_playhead(&"gate", 0.25, 300, "LINEAR")   # no servo key yet: adds one here
+	var gate_track := ShowCues.track_for(anim, ShowCues.TYPE_SERVO, &"gate")
+	_check(gate_track >= 0 and anim.method_track_get_name(gate_track, 0) == &"servo"
+			and anim.method_track_get_params(gate_track, 0) == [&"gate", 0.25, 300, "LINEAR"],
+			"a servo row's first change adds a servo(...) key on its own track")
+	await _until(func() -> bool: return is_equal_approx(_io.get_servo(&"gate")["position"], 0.25), 120)
+	_check(is_equal_approx(_io.get_servo(&"gate")["position"], 0.25) and _io.get_servo(&"gate")["ramp_ms"] == 300,
+			"the servo key reaches the game as a SERVO move")
+	dock.edit_servo_at_playhead(&"gate", 0.8, 300, "SMOOTH")
+	_check(anim.track_get_key_count(gate_track) == 1 and anim.method_track_get_params(gate_track, 0)[1] == 0.8,
+			"editing the servo changes its key in place")
+	dock.edit_coil_at_playhead(&"kickout", 20, 60)
+	var kick_track := ShowCues.track_for(anim, ShowCues.TYPE_COIL, &"kickout")
+	_check(kick_track >= 0 and anim.method_track_get_params(kick_track, 0) == [&"kickout", 20, 60],
+			"a coil row's first change adds a coil(...) key")
+	board.received.clear()
+	await _frames(10)
+	_check(not board.received.has("PULSE 2 20 60"), "a coil key doesn't pulse just because the playhead sits on it")
+	dock.set_fire_coils(true)
+	dock._play_coils(1.4, true)    # playing...
+	dock._play_coils(1.6, true)    # ...past the coil key at 1.5
+	await _until(func() -> bool: return board.received.has("PULSE 2 20 60"), 120)
+	_check(board.received.has("PULSE 2 20 60"), "playing past a coil key pulses the coil (power 60 %%): %s" % [board.received])
+	board.received.clear()
+	dock._play_coils(3.5, true)    # a jump while playing: not a pass
+	dock._play_coils(1.4, false)   # scrubbing back...
+	dock._play_coils(1.6, false)   # ...and over the key, not playing
+	await _frames(10)
+	_check(not board.received.has("PULSE 2 20 60"), "scrubbing or jumping over a coil key doesn't pulse it")
+	dock.set_fire_coils(false)
+	dock._play_coils(1.4, true)
+	dock._play_coils(1.6, true)
+	await _frames(10)
+	_check(not board.received.has("PULSE 2 20 60"), "with Fire coils off, playing past it doesn't pulse it either")
 
 	dock.set_live(false)   # sends OFF
 	await _until(func() -> bool: return _io.get_light(&"playfield")["effect"] == "OFF", 120)
@@ -303,6 +374,60 @@ func _test_editor_preview() -> void:
 	_shows.preview_port = _shows.PREVIEW_PORT
 	_check(not _shows.is_previewing(), "stop listening ends the preview")
 	await _frames()
+
+
+## A show with servo and coil keys, fed to Shows directly (as if read from a scene).
+func _test_servo_and_coil_cues(board: FakeBoard) -> void:
+	var anim := Animation.new()
+	anim.length = 4.0
+	var servo_track := anim.add_track(Animation.TYPE_METHOD)
+	anim.track_insert_key(servo_track, 0.0, ShowCues.servo_key(&"gate", 1.0, 400, "SMOOTH"))
+	anim.track_insert_key(servo_track, 2.0, ShowCues.servo_key(&"gate", 0.0, 0, "LINEAR"))
+	var coil_track := anim.add_track(Animation.TYPE_METHOD)
+	for t in [0.0, 1.0, 2.0, 2.4]:
+		anim.track_insert_key(coil_track, t, ShowCues.coil_key(&"kickout", 0 if t < 2.0 else 15, 100 if t < 2.4 else 50))
+	var cues := ShowCues.read(anim)
+	_check(cues.size() == 6 and cues.filter(func(c: Dictionary) -> bool: return c["type"] == ShowCues.TYPE_COIL).size() == 4
+			and cues[0]["type"] == ShowCues.TYPE_SERVO and cues[0]["position"] == 1.0 and cues[0]["ease"] == "SMOOTH",
+			"servo(...) and coil(...) keys read as servo and coil cues")
+	_check(ShowCues.state_at(cues, 2.1, ShowCues.TYPE_SERVO)[&"gate"]["position"] == 0.0 and ShowCues.state_at(cues, 2.1).is_empty(),
+			"state_at gives servo state by type (and no lights here)")
+	_check(ShowCues.events_between(cues, 0.5, 2.0).size() == 2, "events_between finds the coil pulses in a span")
+	_check(ShowCues.parse_preview("SERVO gate 250 300 LINEAR")["position"] == 0.25
+			and ShowCues.parse_preview("COIL kickout 20 60")["power"] == 60 and ShowCues.parse_preview("SERVO gate x").is_empty(),
+			"SERVO and COIL preview lines read back")
+
+	var data = _shows.ShowData.new()   # what Shows would read from a scene with these keys
+	data.sync_to = "none"
+	data.length = 4.0
+	data.cues = cues
+	_shows._library[&"cue_types"] = "res://not/a/file.tscn"
+	_shows._cue_cache[&"cue_types"] = data
+	_shows.clock_override = func() -> float: return _clock
+	board.received.clear()
+	_shows.play_show(&"cue_types")
+	_clock = 0.05
+	await _frames()
+	_check(board.received.has("SERVO 0 1000 400 SMOOTH") and board.received.has("PULSE 2"),
+			"at 0 s the servo moves and the coil pulses: %s" % [board.received])
+	board.received.clear()
+	_clock = 1.05
+	await _frames()
+	_clock = 1.1
+	await _frames()
+	_check(board.received.count("PULSE 2") == 1, "a coil key fires once when the clock passes it: %s" % [board.received])
+	_shows.stop_show()
+	board.received.clear()
+	_shows.play_show(&"cue_types")   # a late start, 2.5 s in
+	_clock = 2.5
+	await _frames()
+	_check(board.received.has("SERVO 0 0 0 LINEAR") and board.received.has("PULSE 2 15 50")
+			and not board.received.has("PULSE 2") and not board.received.has("PULSE 2 15 100"),
+			"a late start catches the servo up and fires only the coil pulse that's due now: %s" % [board.received])
+	_shows.stop_show()
+	_shows.clock_override = Callable()
+	_shows._library.erase(&"cue_types")
+	_shows._cue_cache.erase(&"cue_types")
 
 
 ## Wait until a condition holds, or `frames` frames.

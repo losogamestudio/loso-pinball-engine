@@ -30,6 +30,7 @@ var _input_leds := {}      ## input name -> StyleBoxFlat
 var _coil_leds := {}       ## coil name -> StyleBoxFlat
 var _lamp_leds := {}       ## lamp name -> StyleBoxFlat
 var _light_leds := {}      ## LED light name -> StyleBoxFlat (shows its color)
+var _servo_leds := {}      ## servo name -> StyleBoxFlat (lit while a move Godot sent is running)
 var _coil_lit_until := {}  ## coil name -> Time.get_ticks_msec() when a flash ends
 var _coil_held := {}       ## coil name -> true while a HOLD ON is running
 
@@ -84,6 +85,8 @@ func _process(_delta: float) -> void:
 		_light(_lamp_leds[lamp_name], mode == "ON" or (mode == "BLINK" and (now / BLINK_MS) % 2 == 0))
 	for light_name: StringName in _light_leds:
 		(_light_leds[light_name] as StyleBoxFlat).bg_color = _light_preview(PinballIO.get_light(light_name), now)
+	for servo_name: StringName in _servo_leds:
+		_light(_servo_leds[servo_name], PinballIO.is_servo_moving(servo_name))
 
 
 ## Roughly what an LED light looks like right now, from what it was told to do.
@@ -279,6 +282,7 @@ func _build_leds() -> void:
 	_coil_leds.clear()
 	_lamp_leds.clear()
 	_light_leds.clear()
+	_servo_leds.clear()
 	var several := MachineConfig.boards.size() > 1
 	for b in MachineConfig.boards:
 		var body := UiKit.section(_led_box, b.id if several else "I/O")
@@ -288,12 +292,18 @@ func _build_leds() -> void:
 		# LED lights show their first LED's number (they have no pin of their own).
 		var lights_here := MachineConfig.lights.filter(func(l: IoDefs.LightDef) -> bool: return MachineConfig.light_board(l) == b.id)
 		_led_group(body, "Lights", lights_here, _light_leds, "first")
+		# Servos show their pin, or P<pca>:<channel> like the board's CFG line.
+		var servos_here := MachineConfig.servos.filter(func(s: IoDefs.ServoDef) -> bool: return s.board == b.id)
+		var addrs: Array[int] = MachineConfig.pca_addrs(b.id)
+		_led_group(body, "Servos", servos_here, _servo_leds, "pin", func(s: IoDefs.ServoDef) -> String:
+			return "P%d:%d" % [addrs.find(s.pca_addr), s.channel] if s.on_pca() else str(s.pin))
 
 
 ## A small heading and a wrapping row of LEDs, one per item, sorted by
 ## [param number_field] ("pin", or "first" for LED lights), which is also the
-## number shown on each LED.
-func _led_group(parent: Control, title: String, items: Array, leds: Dictionary, number_field := "pin") -> void:
+## number shown on each LED unless [param label_of] (item -> String) says otherwise.
+func _led_group(parent: Control, title: String, items: Array, leds: Dictionary, number_field := "pin",
+		label_of := Callable()) -> void:
 	if items.is_empty():
 		return
 	var heading := UiKit.detail(title)
@@ -316,7 +326,7 @@ func _led_group(parent: Control, title: String, items: Array, leds: Dictionary, 
 		led.add_theme_stylebox_override("panel", style)
 		led.tooltip_text = String(item.name)   # the name, for a mouse on the desktop
 		var pin := Label.new()
-		pin.text = str(item.get(number_field))
+		pin.text = label_of.call(item) if label_of.is_valid() else str(item.get(number_field))
 		pin.set_anchors_preset(Control.PRESET_FULL_RECT)
 		pin.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		pin.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -325,5 +335,7 @@ func _led_group(parent: Control, title: String, items: Array, leds: Dictionary, 
 		pin.add_theme_color_override("font_outline_color", Color.BLACK)
 		pin.add_theme_constant_override("outline_size", 4)   # readable on a lit (amber) LED too
 		led.add_child(pin)
+		# Wider for longer labels (a servo's "P0:3"), so the text stays inside.
+		led.custom_minimum_size.x = maxf(LED_SIZE.x, pin.text.length() * DisplaySettings.font_size(UiKit.DETAIL_SIZE) * 0.62 + 10.0)
 		row.add_child(led)
 		leds[item.name] = style

@@ -7,6 +7,7 @@ extends Node
 ##     PinballIO.set_coil_rule(&"flipper_left", true)   # arm a flipper
 ##     PinballIO.pulse_coil(&"kickout")                 # fire a coil once
 ##     PinballIO.set_light(&"shoot_again", "BLINK", Color.ORANGE, 250)   # LED effect
+##     PinballIO.set_servo(&"ramp_gate", 1.0, 600, "SMOOTH")            # servo move (board runs the ramp)
 ##
 ## What happens underneath: open a port → the board answers HELLO with its
 ## type and serial number → we match it to a board in MachineConfig → push that
@@ -31,6 +32,8 @@ signal coil_fired(coil_name: StringName)        ## a coil rule fired on its boar
 signal coil_commanded(coil_name: StringName, on: bool, is_pulse: bool)
 ## A light's wanted effect changed (set_light / all_lights_off). For displays like the Monitor tab.
 signal light_changed(light_name: StringName)
+## A servo was told to move (set_servo). For displays like the Monitor tab.
+signal servo_changed(servo_name: StringName)
 signal watchdog_changed(board_id: StringName, tripped: bool)
 signal latency_measured(port: String, ms: float)
 signal heartbeat(port: String, millis: int)     ## board's HB, once per second while linked
@@ -60,6 +63,12 @@ var _rule_wanted := {}                   ## coil name -> bool, what game code as
 var _lamp_wanted := {}                   ## lamp name -> "ON"/"OFF"/"BLINK"
 var _light_routes := {}                  ## light name -> Route (index = the board's zone number)
 var _light_wanted := {}                  ## light name -> {effect, color, ms, color2}
+var _servo_routes := {}                  ## servo name -> Route (index = the board's servo number)
+var _servo_wanted := {}                  ## servo name -> {position, ramp_ms, ease, until_ms}
+
+## How a servo gets back to where Godot wants it after its board turned
+## everything off (watchdog) or took a new layout (servos go home): a gentle move.
+const SERVO_RESTORE_MS := 500
 
 
 ## Where a coil or lamp lives: which link, and its number on that board.
@@ -215,12 +224,20 @@ func _save_settings() -> void:
 
 # ---------------------------------------------------------------- game-facing commands
 
-## Fire a coil at full power once. [param ms] defaults to the coil's full_ms.
-func pulse_coil(coil_name: StringName, ms := -1) -> void:
+## Fire a coil once. [param ms] defaults to the coil's full_ms. [param power]
+## below 100 % pulses with PWM (a softer kick, like MPF's pulse_power); that
+## needs a PWM-capable pin, so the board refuses it on pulse-only pins.
+func pulse_coil(coil_name: StringName, ms := -1, power := 100) -> void:
 	var r := _route(_coil_routes, coil_name, "coil")
-	if r:
+	if r == null:
+		return
+	if power < 100:
+		var def := MachineConfig.find_coil(coil_name)
+		var full_ms: int = def.full_ms if def else 30
+		r.link.send("PULSE %d %d %d" % [r.index, ms if ms > 0 else full_ms, clampi(power, 1, 100)])
+	else:
 		r.link.send("PULSE %d" % r.index if ms < 0 else "PULSE %d %d" % [r.index, ms])
-		coil_commanded.emit(coil_name, true, true)
+	coil_commanded.emit(coil_name, true, true)
 
 
 ## Hold a coil on (full power, then its hold %) until told off. For diverters,
@@ -316,6 +333,46 @@ func set_light_brightness(level: float) -> void:
 	_save_settings()
 	for port: String in _ready_ports:
 		(_links[port] as BoardLink).send(_bright_line())
+
+
+## Move a servo to [param position] (0..1 of its min..max range) over
+## [param ramp_ms] (0 = straight there). ease: "LINEAR" (steady speed) or
+## "SMOOTH" (eases in and out). The board runs the ramp. Remembered, so it's
+## restored after a watchdog trip or a new layout.
+## Example: PinballIO.set_servo(&"ramp_gate", 1.0, 600, "SMOOTH")
+func set_servo(servo_name: StringName, position: float, ramp_ms := 0, ease := "LINEAR") -> void:
+	if ease not in IoDefs.SERVO_EASES:
+		push_warning("PinballIO: bad servo ease '%s' (use LINEAR or SMOOTH)" % ease)
+		return
+	if MachineConfig.find_servo(servo_name) == null:
+		push_warning("PinballIO: no servo named '%s'" % servo_name)
+		return
+	ramp_ms = clampi(ramp_ms, 0, 600000)
+	_servo_wanted[servo_name] = {"position": clampf(position, 0.0, 1.0), "ramp_ms": ramp_ms, "ease": ease,
+			"until_ms": Time.get_ticks_msec() + ramp_ms}
+	var r: Route = _servo_routes.get(servo_name)
+	if r:
+		r.link.send(_servo_line(r.index, _servo_wanted[servo_name]))
+	servo_changed.emit(servo_name)
+
+
+## What a servo was last told: {position, ramp_ms, ease, until_ms}
+## (until_ms = when its move ends, in Time.get_ticks_msec()). Its home if never moved.
+func get_servo(servo_name: StringName) -> Dictionary:
+	if _servo_wanted.has(servo_name):
+		return _servo_wanted[servo_name]
+	var def := MachineConfig.find_servo(servo_name)
+	return {"position": def.home if def else 0.5, "ramp_ms": 0, "ease": "LINEAR", "until_ms": 0}
+
+
+## Is a servo in the middle of a move Godot sent? (The board doesn't report it.)
+func is_servo_moving(servo_name: StringName) -> bool:
+	return Time.get_ticks_msec() < int(get_servo(servo_name)["until_ms"])
+
+
+func _servo_line(index: int, want: Dictionary, ramp_ms := -1, ease := "") -> String:
+	return "SERVO %d %d %d %s" % [index, roundi(float(want["position"]) * 1000.0),
+			want["ramp_ms"] if ramp_ms < 0 else ramp_ms, want["ease"] if ease == "" else ease]
 
 
 func _fx_line(index: int, want: Dictionary) -> String:
@@ -447,6 +504,8 @@ func _on_link_configured(link: BoardLink) -> void:
 		_lamp_routes[plan.lamp_names[i]] = Route.new(link, i)
 	for i in plan.light_names.size():
 		_light_routes[plan.light_names[i]] = Route.new(link, i)
+	for i in plan.servo_names.size():
+		_servo_routes[plan.servo_names[i]] = Route.new(link, i)
 	_ready_ports[link.port_name] = true
 	_resend_outputs(link)
 	if link.running_fingerprint != plan.fingerprint:
@@ -533,6 +592,10 @@ func _resend_outputs(link: BoardLink) -> void:
 		var want := get_light(plan.light_names[i])
 		if want["effect"] != "OFF":
 			link.send(_fx_line(i, want))
+	# Servos held still (watchdog) or went home (new layout): a gentle move back.
+	for i in plan.servo_names.size():
+		if _servo_wanted.has(plan.servo_names[i]):
+			link.send(_servo_line(i, _servo_wanted[plan.servo_names[i]], SERVO_RESTORE_MS, "SMOOTH"))
 
 
 func _unbind(port: String) -> void:
@@ -545,6 +608,8 @@ func _unbind(port: String) -> void:
 		_lamp_routes.erase(lamp_name)
 	for light_name in plan.light_names:
 		_light_routes.erase(light_name)
+	for servo_name in plan.servo_names:
+		_servo_routes.erase(servo_name)
 	for input_name in plan.input_names:
 		switches.erase(input_name)
 	_plans.erase(port)

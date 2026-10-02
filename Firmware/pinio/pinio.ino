@@ -1,7 +1,7 @@
 /*
-  PINIO 0.3  —  generic pinball I/O firmware
+  PINIO 0.4  —  generic pinball I/O firmware
   ------------------------------------------
-  Needs the OctoWS2811 library, which comes with Teensyduino (for the LED chains).
+  Needs the OctoWS2811, Servo and Wire libraries, which all come with Teensyduino.
 
   The board owns timing + safety, Godot owns rules + presentation.
 
@@ -21,7 +21,10 @@
       CFG CHAIN 0 8 30 GRB             LED chain 0 = WS2812B strip on pin 8, 30 LEDs, GRB order
       CFG ZONE 0 0 0 30                zone 0 = chain 0, LEDs 0..29 (a named light in Godot)
       CFG ZONE 1 0 0 1                 zone 1 = chain 0, LED 0 only (an insert)
-      CFG DONE                         -> ACK CFG <inputs> <coils> <lamps> <chains> <zones> <hash>, then SWS
+      CFG PCA 0 40                     PCA9685 servo board 0 at I2C address 0x40 (pins 18/19)
+      CFG SERVO 0 5 1000 2000 500      servo 0 = pin 5, 1000..2000 us, home at 500 per mille (middle)
+      CFG SERVO 1 P0:3 600 2400 0      servo 1 = PCA 0 channel 3, 600..2400 us, home at min
+      CFG DONE                         -> ACK CFG <inputs> <coils> <lamps> <chains> <zones> <servos> <hash>, then SWS
 
   LED effects (all drawn on the board, see leds.h):
       FX 0 RAINBOW 000000 3000         zone 0: rainbow, one cycle every 3 s
@@ -29,6 +32,12 @@
       FX ALL OFF                       every zone off
     Effects: OFF SOLID BLINK PULSE CHASE WIPE FADE RAINBOW SPARKLE.
     Colors are RRGGBB hex; defaults FFFFFF, 500 ms, 000000.
+
+  Servos (ramps run on the board, see servos.h):
+      SERVO 0 1000                     servo 0 to its max, now
+      SERVO 1 250 1500 SMOOTH          servo 1 to 25% over 1.5 s, easing in and out
+    Positions are per mille (0..1000) of the servo's min..max pulse width.
+    Watchdog, HELLO and CFG SAVE stop every ramp: servos hold where they are.
 
   Storing the layout ("burning" it):
     CFG SAVE writes the current layout into EEPROM. At power-up the board
@@ -50,13 +59,13 @@
   Protocol: plain text, one message per line ending in '\n'.
 
   Board -> Godot
-    HELLO PINIO 0.3 <board> <uid> <running_hash|-> <saved_hash|->   reply to HELLO
+    HELLO PINIO 0.4 <board> <uid> <running_hash|-> <saved_hash|->   reply to HELLO
     SWS <bits>                      all input states (after CFG DONE, or when asked)
     SW <in> <0|1>                   debounced input change
     FIRED <coil>                    a pulse-type coil rule fired locally
     PONG <n>                        reply to PING
     ACK <cmd> ...                   command accepted
-    ERR <message>                   something was wrong
+    ERR <message>                   something was wrong (ERR PCA <n> lost: a PCA9685 stopped answering)
     WD TRIP / WD OK                 watchdog killed outputs / link restored
     HB <millis>                     heartbeat, once per second
 
@@ -64,16 +73,18 @@
     HELLO                           start/restart link: outputs off, rules disarmed,
                                     config KEPT, arms watchdog
     HB                              heartbeat (any line counts)
-    CFG CLEAR | PWM | IN | COIL | LAMP | CHAIN | ZONE | DONE     configuration, see above
+    CFG CLEAR | PWM | IN | COIL | LAMP | CHAIN | ZONE | PCA | SERVO | DONE   configuration, see above
     CFG SAVE                        store the running layout in EEPROM (outputs go off)
     CFG ERASE                       forget the stored layout
     SWS                             ask for all input states
-    PULSE <coil> [ms]               full power for ms (default full_ms), max 255
+    PULSE <coil> [ms] [power]       full power for ms (default full_ms), max 255;
+                                    power 1..100 % (default 100, below 100 needs a PWM pin)
     HOLD <coil> <ON|OFF>            full power for full_ms, then hold until OFF
     RULE <coil|ALL> <ON|OFF>        arm/disarm trigger rules
     LED <lamp> <ON|OFF|BLINK>       lamp control
     FX <zone|ALL> <effect> [RRGGBB] [ms] [RRGGBB2]   LED zone effect
     BRIGHT <0..255>                 LED brightness for every chain (default 128)
+    SERVO <servo> <pos> [ms] [LINEAR|SMOOTH]   servo to pos 0..1000 over ms (default 0 = now)
     PING <n>                        round-trip latency test
     WD <ON|OFF>                     watchdog on/off (Serial Monitor testing only)
 
@@ -94,8 +105,11 @@
 #if BOARD_HAS_LEDS
   #include "leds.h"
 #endif
+#if BOARD_HAS_SERVOS
+  #include "servos.h"
+#endif
 
-const char* FIRMWARE = "PINIO 0.3";
+const char* FIRMWARE = "PINIO 0.4";
 
 // ---------------- Limits and timing ----------------
 const uint32_t WATCHDOG_MS      = 500;    // nothing from Godot this long -> outputs off
@@ -129,6 +143,7 @@ struct Coil {
   int8_t    trig;       // trigger input, or NONE
   int8_t    eos;        // end-of-stroke input, or NONE
   uint16_t  recycleMs;  // dead time after turning off
+  uint8_t   pulsePct;   // power during FULL: 100 = full on, less = PWM (PULSE <coil> <ms> <power>)
 
   bool      ruleArmed;  // Godot said RULE <coil> ON
   bool      ruleActive; // current activation came from the trigger rule
@@ -197,11 +212,17 @@ const uint16_t EE_TEXT     = 10;
 // ---------------- Coil outputs ----------------
 // pinMode() before digitalWrite() switches the pin back from PWM to plain
 // GPIO, which a pin needs after it has been used with analogWrite().
-void driveOff(const Coil& c)  { pinMode(c.pin, OUTPUT); digitalWrite(c.pin, LOW); }
-void driveFull(const Coil& c) { pinMode(c.pin, OUTPUT); digitalWrite(c.pin, HIGH); }
+void driveOff(const Coil& c) { pinMode(c.pin, OUTPUT); digitalWrite(c.pin, LOW); }
+void driveOn(const Coil& c)  { pinMode(c.pin, OUTPUT); digitalWrite(c.pin, HIGH); }
+
+// FULL power, or a PWM pulse at pulsePct (a softer kick, e.g. for a toy).
+void driveFull(const Coil& c) {
+  if (c.pulsePct >= 100) driveOn(c);
+  else analogWrite(c.pin, (uint16_t)c.pulsePct * 255 / 100);
+}
 
 void driveHold(const Coil& c) {
-  if (c.holdPct >= 100) driveFull(c);
+  if (c.holdPct >= 100) driveOn(c);
   else analogWrite(c.pin, (uint16_t)c.holdPct * 255 / 100);
 }
 
@@ -232,10 +253,11 @@ bool wantsHold(const Coil& c) {
   return c.ruleActive && c.ruleArmed && inputActive(c.trig);
 }
 
-// Start full power. Returns false if the coil is busy or recycling.
-bool startCoil(Coil& c, uint8_t ms, bool fromRule, uint32_t now) {
+// Start full power (or power % for a PULSE). Returns false if the coil is busy or recycling.
+bool startCoil(Coil& c, uint8_t ms, bool fromRule, uint32_t now, uint8_t powerPct = 100) {
   if (c.state != COIL_IDLE) return false;
   c.ruleActive = fromRule;
+  c.pulsePct = powerPct;
   enterState(c, COIL_FULL, ms, now);
   return true;
 }
@@ -310,6 +332,9 @@ void allOutputsOff() {
 #if BOARD_HAS_LEDS
   ledsAllOff();   // LED zones too; the next frame sends black
 #endif
+#if BOARD_HAS_SERVOS
+  servosHold();   // servos stop moving and hold where they are
+#endif
 }
 
 // Forget the whole configuration and drive every output pin low.
@@ -317,6 +342,9 @@ void clearConfig() {
   allOutputsOff();
 #if BOARD_HAS_LEDS
   ledsClearConfig();   // before the pin loop below: gives the chain pins back to normal GPIO
+#endif
+#if BOARD_HAS_SERVOS
+  servosClearConfig(); // before the pin loop below: pin servos stop pulsing
 #endif
   memset(inputs, 0, sizeof(inputs));
   memset(coils, 0, sizeof(coils));
@@ -653,6 +681,7 @@ void handleCfg(char** tok, uint8_t n, uint32_t now) {
     c.trig = trig;
     c.eos = eos;
     c.recycleMs = recycle;
+    c.pulsePct = 100;
     c.defined = true;
     pinUsed[pin] = true;
     enterState(c, COIL_IDLE, 0, now);
@@ -714,9 +743,64 @@ void handleCfg(char** tok, uint8_t n, uint32_t now) {
     cfgFail("this board has no LED chain support");
 #endif
 
+  } else if (!strcmp(sub, "PCA")) {
+    // CFG PCA <pca> <addr>   (addr in hex, 40..7F)
+#if BOARD_HAS_SERVOS
+    long id;
+    char* end;
+    if (n != 4 || !parseNum(tok[2], 0, MAX_PCAS - 1, id)) { cfgFail("PCA needs <pca 0..3> <addr 40..7F>"); return; }
+    long addr = strtol(tok[3], &end, 16);
+    if (*end != '\0' || addr < 0x40 || addr > 0x7F) { cfgFail("PCA address must be hex 40..7F"); return; }
+    const char* why = pcaDefine(id, addr);
+    if (why) { cfgFail(why); return; }
+    if (!cfgAccept()) return;
+    out->print("ACK CFG PCA ");
+    out->println(id);
+#else
+    cfgFail("this board has no servo support");
+#endif
+
+  } else if (!strcmp(sub, "SERVO")) {
+    // CFG SERVO <servo> <pin|P<pca>:<ch>> <min_us> <max_us> <home 0..1000>
+#if BOARD_HAS_SERVOS
+    long id, minUs, maxUs, home;
+    if (n != 7) { cfgFail("SERVO needs <servo> <pin|P<pca>:<ch>> <min_us> <max_us> <home>"); return; }
+    if (!parseNum(tok[2], 0, MAX_SERVO_COUNT - 1, id)) { cfgFail("bad servo index"); return; }
+    if (!parseNum(tok[4], SERVO_LOWEST_US, SERVO_HIGHEST_US, minUs)
+        || !parseNum(tok[5], SERVO_LOWEST_US, SERVO_HIGHEST_US, maxUs) || minUs >= maxUs) {
+      cfgFail("servo pulse must be 500..2500 us, min below max");
+      return;
+    }
+    if (!parseNum(tok[6], 0, 1000, home)) { cfgFail("servo home must be 0..1000"); return; }
+    const char* why;
+    if (tok[3][0] == 'P') {
+      // P<pca>:<ch>, e.g. P0:3
+      char* colon = strchr(tok[3], ':');
+      long pca, ch;
+      if (!colon) { cfgFail("PCA output looks like P0:3"); return; }
+      *colon = '\0';
+      if (!parseNum(tok[3] + 1, 0, MAX_PCAS - 1, pca) || !parseNum(colon + 1, 0, 15, ch)) {
+        cfgFail("PCA output looks like P0:3 (PCA 0..3, channel 0..15)");
+        return;
+      }
+      why = servosDefinePca(id, pca, ch, minUs, maxUs, home);
+    } else {
+      long pin;
+      if (!cfgCheckPin(tok[3], CAP_OUT, pin)) return;
+      why = servosDefinePin(id, pin, minUs, maxUs, home);
+      if (!why) pinUsed[pin] = true;
+    }
+    if (why) { cfgFail(why); return; }
+    if (!cfgAccept()) return;
+    out->print("ACK CFG SERVO ");
+    out->println(id);
+#else
+    cfgFail("this board has no servo support");
+#endif
+
   } else if (!strcmp(sub, "DONE")) {
     if (cfgError) { out->println("ERR CFG has errors, send CFG CLEAR and start over"); return; }
-    uint8_t nIn = 0, nCoil = 0, nLamp = 0, nChain = 0, nZone = 0;
+    uint8_t nIn = 0, nCoil = 0, nLamp = 0, nChain = 0, nZone = 0, nServo = 0;
     for (uint8_t i = 0; i < MAX_INPUTS; i++) nIn += inputs[i].defined;
     for (uint8_t i = 0; i < MAX_COILS; i++)  nCoil += coils[i].defined;
     for (uint8_t i = 0; i < MAX_LAMPS; i++)  nLamp += lamps[i].defined;
@@ -724,6 +808,10 @@ void handleCfg(char** tok, uint8_t n, uint32_t now) {
     nChain = ledChainCount;
     nZone  = ledsZoneCount();
     ledsStart();
+#endif
+#if BOARD_HAS_SERVOS
+    nServo = servosCount();
+    servosStart();   // every servo to its home position
 #endif
     configured = true;
     out->print("ACK CFG ");
@@ -737,12 +825,14 @@ void handleCfg(char** tok, uint8_t n, uint32_t now) {
     out->print(' ');
     out->print(nZone);
     out->print(' ');
+    out->print(nServo);
+    out->print(' ');
     printHash(true, cfgHash);
     out->println();
     sendAllSwitches();
 
   } else {
-    out->println("ERR CFG needs CLEAR, PWM, IN, COIL, LAMP, CHAIN, ZONE, DONE, SAVE or ERASE");
+    out->println("ERR CFG needs CLEAR, PWM, IN, COIL, LAMP, CHAIN, ZONE, PCA, SERVO, DONE, SAVE or ERASE");
   }
 }
 
@@ -809,18 +899,23 @@ void handleLine(char* line, uint32_t now) {
     sendAllSwitches();   // Godot asks for this when it adopts a layout the board already has
 
   } else if (!strcmp(cmd, "PULSE")) {
-    // PULSE <coil> [ms]
-    if (n < 2) { out->println("ERR PULSE needs <coil> [ms]"); return; }
+    // PULSE <coil> [ms] [power]
+    if (n < 2) { out->println("ERR PULSE needs <coil> [ms] [power]"); return; }
     int id = findCoil(tok[1]);
     if (id < 0) return;
     long ms = coils[id].fullMs;
+    long power = 100;
     if (n > 2 && !parseNum(tok[2], 1, 100000, ms)) { out->println("ERR bad pulse ms"); return; }
+    if (n > 3 && !parseNum(tok[3], 1, 100, power)) { out->println("ERR pulse power must be 1..100"); return; }
+    if (power < 100 && !pinHas(coils[id].pin, CAP_OUT | CAP_PWM)) { out->println("ERR coil needs a PWM pin for power"); return; }
     if (ms > MAX_PULSE_MS) ms = MAX_PULSE_MS;
-    if (!startCoil(coils[id], (uint8_t)ms, false, now)) { out->println("ERR coil busy"); return; }
+    if (!startCoil(coils[id], (uint8_t)ms, false, now, (uint8_t)power)) { out->println("ERR coil busy"); return; }
     out->print("ACK PULSE ");
     out->print(id);
     out->print(' ');
-    out->println(ms);
+    out->print(ms);
+    out->print(' ');
+    out->println(power);
 
   } else if (!strcmp(cmd, "HOLD")) {
     // HOLD <coil> <ON|OFF>
@@ -872,6 +967,25 @@ void handleLine(char* line, uint32_t now) {
     out->print(id);
     out->print(' ');
     out->println(tok[2]);
+
+#if BOARD_HAS_SERVOS
+  } else if (!strcmp(cmd, "SERVO")) {
+    // SERVO <servo> <pos 0..1000> [ms] [LINEAR|SMOOTH]
+    long id, pos, ms = 0;
+    ServoEase ease = EASE_LINEAR;
+    if (n < 3 || !parseNum(tok[1], 0, MAX_SERVO_COUNT - 1, id) || !servos[id].defined) { out->println("ERR bad servo"); return; }
+    if (!parseNum(tok[2], 0, 1000, pos)) { out->println("ERR servo position must be 0..1000"); return; }
+    if (n > 3 && !parseNum(tok[3], 0, 600000, ms)) { out->println("ERR bad servo ms"); return; }
+    if (n > 4) {
+      if (!strcmp(tok[4], "SMOOTH")) ease = EASE_SMOOTH;
+      else if (strcmp(tok[4], "LINEAR")) { out->println("ERR servo ease must be LINEAR or SMOOTH"); return; }
+    }
+    servosMove(id, pos, ms, ease, now);
+    out->print("ACK SERVO ");
+    out->print(id);
+    out->print(' ');
+    out->println(pos);
+#endif
 
 #if BOARD_HAS_LEDS
   } else if (!strcmp(cmd, "FX")) {
@@ -953,6 +1067,9 @@ void loop() {
   updateLamps(now);
 #if BOARD_HAS_LEDS
   ledsUpdate(now);   // draws + starts sending a frame about every 16 ms; never waits
+#endif
+#if BOARD_HAS_SERVOS
+  servosUpdate(now); // servo ramps every 10 ms, at most one PCA9685 write per pass
 #endif
   updateStatusLed(now);
   checkWatchdog(now);

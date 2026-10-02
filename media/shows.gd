@@ -27,6 +27,10 @@ const SHOWS_DIR := "res://assets/shows"
 const ANIMATION_NAME := ShowCues.ANIMATION_NAME
 const PREVIEW_PORT := ShowCues.PREVIEW_PORT
 const PREVIEW_TIMEOUT_MS := 3000   ## no line from the editor for this long = preview over
+## A coil pulse whose moment passed longer ago than this is skipped, not fired
+## late: when a show starts mid-song or its song loops, lights and servos catch
+## up to where the song is, but coils don't fire a burst of old pulses.
+const COIL_LATE_S := 0.15
 const SETTINGS_PATH := "user://audio.cfg"   ## shared with Media's volumes
 const MAX_SYNC_OFFSET_MS := 300
 
@@ -65,7 +69,7 @@ class ShowData:
 	var sync_to := "music"
 	var length := 0.0                  ## the "show" animation's length, seconds
 	var loops := false                 ## for sync_to "none": the animation's loop setting
-	var cues: Array[Dictionary] = []   ## {time, light, effect, color, ms, color2}, by time
+	var cues: Array[Dictionary] = []   ## light / servo / coil cues by time (see ShowCues.read)
 
 
 func _ready() -> void:
@@ -171,7 +175,9 @@ func _process(_delta: float) -> void:
 		_next = 0   # the song looped (or jumped back): start the cues over
 	_last_position = position
 	while _next < _show.cues.size() and _show.cues[_next]["time"] <= position:
-		_fire(_show.cues[_next])
+		var cue: Dictionary = _show.cues[_next]
+		if cue["type"] != ShowCues.TYPE_COIL or position - cue["time"] <= COIL_LATE_S:
+			_fire(cue)
 		_next += 1
 	if _show.sync_to == "none" and not _show.loops and _next >= _show.cues.size() and position >= _show.length:
 		stop_show()
@@ -192,14 +198,35 @@ func _clock() -> float:
 
 
 func _fire(cue: Dictionary) -> void:
-	var light_name: StringName = cue["light"]
-	if MachineConfig.find_light(light_name) == null:
-		if not _warned.has(light_name):
-			_warned[light_name] = true
-			push_warning("Shows: '%s' uses light '%s', which isn't in the machine config; skipping it" % [_show_name, light_name])
+	var target: StringName = cue["target"]
+	var known: bool
+	match cue["type"]:
+		ShowCues.TYPE_SERVO:
+			known = MachineConfig.find_servo(target) != null
+		ShowCues.TYPE_COIL:
+			known = MachineConfig.find_coil(target) != null
+		_:
+			known = MachineConfig.find_light(target) != null
+	if not known:
+		var key := "%s:%s" % [cue["type"], target]
+		if not _warned.has(key):
+			_warned[key] = true
+			push_warning("Shows: '%s' uses %s '%s', which isn't in the machine config; skipping it" % [_show_name, cue["type"], target])
 		return
-	_touched[light_name] = true
-	PinballIO.set_light(light_name, cue["effect"], cue["color"], cue["ms"], cue["color2"])
+	_apply_cue(cue)
+
+
+## Do what a cue says: light effect, servo move or coil pulse.
+func _apply_cue(cue: Dictionary) -> void:
+	var target: StringName = cue["target"]
+	match cue["type"]:
+		ShowCues.TYPE_SERVO:
+			PinballIO.set_servo(target, cue["position"], cue["ramp_ms"], cue["ease"])
+		ShowCues.TYPE_COIL:
+			PinballIO.pulse_coil(target, cue["ms"] if cue["ms"] > 0 else -1, cue["power"])
+		_:
+			_touched[target] = true
+			PinballIO.set_light(target, cue["effect"], cue["color"], cue["ms"], cue["color2"])
 
 
 # ---------------------------------------------------------------- automatic start / stop
@@ -313,21 +340,31 @@ func _poll_preview() -> void:
 
 func _handle_preview_line(line: String, ip: String, port: int) -> void:
 	if line == "PING":
-		# Answer with this machine's light names, for the dock's light list.
-		var words := PackedStringArray(["PONG"])
-		for l in MachineConfig.lights:
-			words.append(String(l.name))
+		# Answer with this machine's light, servo and coil names, for the dock's lists.
+		var answer := ShowCues.pong_line(MachineConfig.lights.map(func(l: IoDefs.LightDef) -> StringName: return l.name),
+				MachineConfig.servos.map(func(s: IoDefs.ServoDef) -> StringName: return s.name),
+				MachineConfig.coils.map(func(c: IoDefs.CoilDef) -> StringName: return c.name))
 		_preview_udp.set_dest_address(ip, port)
-		_preview_udp.put_packet(" ".join(words).to_utf8_buffer())
+		_preview_udp.put_packet(answer.to_utf8_buffer())
 	elif line == "OFF":
 		stop_show()
 		PinballIO.all_lights_off()
-	elif line.begins_with("FX "):
-		var fx := ShowCues.parse_fx(line)
-		if fx.is_empty() or fx["effect"] not in IoDefs.EFFECTS or MachineConfig.find_light(fx["light"]) == null:
-			return   # a light this machine doesn't have: skip it quietly (the dock lists the real ones)
-		stop_show()   # the editor has the lights now
-		PinballIO.set_light(fx["light"], fx["effect"], fx["color"], fx["ms"], fx["color2"])
+	else:
+		var cue := ShowCues.parse_preview(line)
+		if cue.is_empty():
+			return
+		match cue["type"]:
+			ShowCues.TYPE_SERVO:
+				if MachineConfig.find_servo(cue["target"]) == null:
+					return   # one this machine doesn't have: skip it quietly (the dock lists the real ones)
+			ShowCues.TYPE_COIL:
+				if MachineConfig.find_coil(cue["target"]) == null:
+					return
+			_:
+				if cue["effect"] not in IoDefs.EFFECTS or MachineConfig.find_light(cue["target"]) == null:
+					return
+		stop_show()   # the editor has the hardware now
+		_apply_cue(cue)
 
 
 func _end_preview() -> void:

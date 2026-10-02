@@ -6,7 +6,7 @@ extends SceneTree
 ## Prints PASS/FAIL per check and exits with code 1 if anything failed.
 ##
 ## A tiny fake board stands in for the Teensy: it answers HELLO, ACKs CFG
-## lines the way PINIO 0.3 does, and can be told to reject one line.
+## lines the way PINIO 0.4 does, and can be told to reject one line.
 
 const MachineConfigScript := preload("res://config/machine_config.gd")
 
@@ -17,6 +17,7 @@ func _init() -> void:
 	_test_fnv_vectors()
 	_test_default_config()
 	_test_validation_catches_mistakes()
+	_test_servos()
 	_test_link_handshake()
 	_test_link_config_rejected()
 	_test_adopt_and_burn()
@@ -126,9 +127,66 @@ func _test_validation_catches_mistakes() -> void:
 	cfg.free()
 
 
+func _servo(servo_name: String, pin: int, addr := 0x40, channel := 0) -> IoDefs.ServoDef:
+	var s := IoDefs.ServoDef.new()
+	s.name = StringName(servo_name)
+	s.pin = pin
+	s.pca_addr = addr
+	s.channel = channel
+	return s
+
+
+func _test_servos() -> void:
+	var cfg := _new_config()
+	cfg.servos.append(_servo("gate", 5))                  # on a board pin
+	cfg.servos.append(_servo("arm", -1, 0x41, 0))         # second PCA9685
+	var head := _servo("head", -1, 0x40, 3)              # first PCA9685
+	head.min_us = 600
+	head.max_us = 2400
+	head.home = 0.25
+	cfg.servos.append(head)
+	var problems: PackedStringArray = cfg.validate()
+	_check(problems.is_empty(), "layout with servos validates (%s)" % ", ".join(problems))
+	var plan: IoDefs.BoardPlan = cfg.build_plan(cfg.boards[0])
+	var tail := plan.lines.slice(plan.lines.find("CFG ZONE 1 0 0 1") + 1)
+	var expected: PackedStringArray = [
+		"CFG PCA 0 40",
+		"CFG PCA 1 41",
+		"CFG SERVO 0 5 1000 2000 500",
+		"CFG SERVO 1 P1:0 1000 2000 500",
+		"CFG SERVO 2 P0:3 600 2400 250",
+		"CFG DONE",
+	]
+	_check(tail == expected, "servo CFG lines: PCAs by address, then servos on a pin or P<pca>:<ch>
+      got: %s" % "
+           ".join(tail))
+	_check(plan.servo_names == [&"gate", &"arm", &"head"], "plan maps servo numbers back to names")
+	_check(not cfg.free_pins(&"main", BoardTypes.CAP_OUT).has(5), "a pin servo's pin isn't offered to anything else")
+	var again: Node = load("res://config/machine_config.gd").new()
+	again._apply_dict(cfg.to_dict())
+	_check(JSON.stringify(again.to_dict()) == JSON.stringify(cfg.to_dict()), "servos survive the to_dict/from_dict round trip")
+	again.free()
+
+	cfg.servos.append(_servo("twin", -1, 0x40, 3))       # head's channel
+	cfg.servos.append(_servo("clash", 2))                # flipper_left's pin
+	var bad := _servo("backwards", -1, 0x40, 4)
+	bad.min_us = 2000
+	bad.max_us = 1000
+	cfg.servos.append(bad)
+	var far := _servo("far", -1, 0x90, 0)
+	cfg.servos.append(far)
+	var text := "
+".join(cfg.validate() as PackedStringArray)
+	_check(text.contains("both use PCA 0x40 channel 3"), "catches two servos on one PCA channel")
+	_check(text.contains("both use pin 2"), "catches a servo on a pin that's taken")
+	_check(text.contains("min below max"), "catches a backwards pulse range")
+	_check(text.contains("0x40..0x7F"), "catches a bad PCA address")
+	cfg.free()
+
+
 # ---------------------------------------------------------------- BoardLink with a fake board
 
-## Just enough of a PINIO 0.3 board to exercise the link.
+## Just enough of a PINIO 0.4 board to exercise the link.
 class FakeBoard:
 	var link: BoardLink
 	var received: PackedStringArray = []
@@ -141,13 +199,14 @@ class FakeBoard:
 	var lamps := 0
 	var chains := 0
 	var zones := 0
+	var servos := 0
 
 	func handle(line: String) -> void:
 		received.append(line)
 		var parts := line.split(" ")
 		match parts[0]:
 			"HELLO":
-				_reply("HELLO PINIO 0.3 TEENSY41 12345670 %s %s" % [running, saved])
+				_reply("HELLO PINIO 0.4 TEENSY41 12345670 %s %s" % [running, saved])
 			"SWS":
 				_reply("SWS " + "0".repeat(inputs))
 			"CFG":
@@ -159,10 +218,13 @@ class FakeBoard:
 					inputs = 0
 					coils = 0
 					lamps = 0
+					chains = 0
+					zones = 0
+					servos = 0
 					_reply("ACK CFG CLEAR")
 				elif parts[1] == "DONE":
 					running = MachineConfigScript.layout_hash(layout)
-					_reply("ACK CFG %d %d %d %d %d %s" % [inputs, coils, lamps, chains, zones, running])
+					_reply("ACK CFG %d %d %d %d %d %d %s" % [inputs, coils, lamps, chains, zones, servos, running])
 					_reply("SWS " + "0".repeat(inputs))
 				elif parts[1] == "SAVE":
 					saved = running
@@ -172,6 +234,9 @@ class FakeBoard:
 						"IN": inputs += 1
 						"COIL": coils += 1
 						"LAMP": lamps += 1
+						"CHAIN": chains += 1
+						"ZONE": zones += 1
+						"SERVO": servos += 1
 					layout.append(line)
 					_reply("ACK " + line)
 
@@ -195,7 +260,7 @@ func _test_link_handshake() -> void:
 	link.configured.connect(func() -> void: events.append("configured"))
 
 	link.start()
-	_check(events.size() == 1 and events[0] == "linked PINIO 0.3 TEENSY41 12345670", "HELLO reply parsed: %s" % str(events))
+	_check(events.size() == 1 and events[0] == "linked PINIO 0.4 TEENSY41 12345670", "HELLO reply parsed: %s" % str(events))
 
 	var plan: IoDefs.BoardPlan = cfg.build_plan(cfg.boards[0])
 	var lines: PackedStringArray = ["CFG CLEAR"]

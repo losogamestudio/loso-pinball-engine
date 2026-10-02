@@ -10,12 +10,12 @@ class_name BoardTypes
 ## without creating an instance (like a static function library in Unreal).
 
 const CAP_IN := 1    ## pin may be a switch input
-const CAP_OUT := 2   ## pin may be a coil, lamp or LED chain output
+const CAP_OUT := 2   ## pin may be a coil, lamp, LED chain or servo output
 const CAP_PWM := 4   ## output pin that can do a PWM hold
 const OUT_PWM := CAP_OUT | CAP_PWM
 
 ## Firmware version this Godot build speaks. The board's HELLO must match.
-const FIRMWARE := "PINIO 0.3"
+const FIRMWARE := "PINIO 0.4"
 
 const TYPES := {
 	"TEENSY41": {
@@ -35,7 +35,7 @@ const TYPES := {
 		"reserved": {
 			0: "Serial1", 1: "Serial1",
 			13: "status LED",
-			18: "I2C SDA", 19: "I2C SCL",
+			18: "I2C SDA (PCA9685 servo boards)", 19: "I2C SCL (PCA9685 servo boards)",
 		},
 		"max_inputs": 24,
 		"max_coils": 24,
@@ -43,6 +43,9 @@ const TYPES := {
 		"max_chains": 4,            # WS2812B LED chains (leds.h)
 		"max_leds_per_chain": 300,
 		"max_zones": 96,            # lights: strips, sections and single inserts
+		"max_servos": 32,           # servos in all, on pins and PCA9685 channels (servos.h)
+		"max_pin_servos": 12,       # servos on board pins
+		"max_pcas": 4,              # PCA9685 boards on the I2C bus, 16 servos each
 		"default_pwm_hz": 20000,
 	},
 }

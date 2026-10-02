@@ -38,6 +38,7 @@ func _run() -> void:
 	await _test_rename_switch_follows_coils()
 	await _test_switch_kind()
 	await _test_light_editor()
+	await _test_servo_editor()
 
 	_config.restore(saved_layout, false)
 	print("\n%s" % ("ALL PASSED" if _failures == 0 else "%d FAILURE(S)" % _failures))
@@ -243,5 +244,36 @@ func _test_light_editor() -> void:
 	editor._cancel()
 	await _frames()
 	_check(_config.find_light(&"insert_5") == null and _config.lights.size() == 2, "Cancel removes the new light again")
+	editor.queue_free()
+	await _frames()
+
+
+func _test_servo_editor() -> void:
+	var editor: Control = load("res://config/servo_editor.gd").new()
+	editor.open(&"")
+	root.add_child(editor)
+	await _frames()
+	_check(editor._draft.on_pca() and editor._draft.pca_addr == 0x40 and editor._draft.channel == 0 and editor._draft.name == &"servo",
+			"a new servo starts on PCA 0x40 channel 0")
+	_check(editor._draft_error() == "", "the new servo is valid as it is")
+	_check(editor._addr_text(0x40) == "0x40 (no jumpers)" and editor._addr_text(0x45) == "0x45 (A0 A2 bridged)",
+			"the address picker says which jumpers make each address")
+	editor._draft.min_us = 2000
+	editor._draft.max_us = 1500
+	_check(editor._draft_error().contains("shorter"), "a backwards pulse range is refused")
+	editor._draft.min_us = 1000
+	editor._draft.max_us = 2000
+	editor._draft.pin = editor._first_free_pin()   # switch to a board pin
+	editor._build()
+	await _frames()
+	_check(editor._draft.pin >= 0 and _config.free_pins(&"main", BoardTypes.CAP_OUT).has(editor._draft.pin),
+			"on a board pin it picks a free output (pin %d)" % editor._draft.pin)
+	editor._try_on_board()
+	await _frames()
+	var plan: IoDefs.BoardPlan = _config.build_plan(_config.boards[0])
+	_check(plan.lines.has("CFG SERVO 0 %d 1000 2000 500" % editor._draft.pin), "Send to board puts it in the CFG lines")
+	editor._cancel()
+	await _frames()
+	_check(_config.servos.is_empty(), "Cancel removes the new servo again")
 	editor.queue_free()
 	await _frames()

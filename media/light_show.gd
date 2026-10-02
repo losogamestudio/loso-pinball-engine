@@ -8,9 +8,8 @@ extends Node
 ##   LightShow (this script)
 ##   ├── AnimationPlayer    with an animation called "show":
 ##   │                        a Call Method track on the LightShow node, whose
-##   │                        keys call light(...) at the right moments
-##   │                        (one method per cue type: light now, coil and
-##   │                        servo later)
+##   │                        keys call light(...), servo(...) or coil(...)
+##   │                        at the right moments (one method per cue type)
 ##   └── SongPreview        an AudioStreamPlayer; put the song on an Audio
 ##                          track so its waveform shows while you place cues
 ##
@@ -36,6 +35,19 @@ func light(light_name: StringName, effect: String = "SOLID", color: Color = Colo
 	# Only runs if someone plays the AnimationPlayer by hand; the Shows autoload
 	# reads the keys instead. Either way the board gets the same command.
 	PinballIO.set_light(light_name, effect, color, ms, color2)
+
+
+## A servo cue: move a servo (from the Hardware tab) to position 0..1 of its
+## range over ramp_ms. ease: "LINEAR" (steady) or "SMOOTH" (eases in and out).
+## The board runs the ramp.
+func servo(servo_name: StringName, position: float = 0.5, ramp_ms: int = 500, ease: String = "SMOOTH") -> void:
+	PinballIO.set_servo(servo_name, position, ramp_ms, ease)
+
+
+## A coil cue: pulse a coil once. ms 0 = the coil's own pulse time (max 255);
+## power below 100 % is a softer PWM pulse (needs a PWM-capable pin).
+func coil(coil_name: StringName, ms: int = 0, power: int = 100) -> void:
+	PinballIO.pulse_coil(coil_name, ms if ms > 0 else -1, power)
 
 
 ## The old name for light(), from before cue types. Old shows' keys still call it.

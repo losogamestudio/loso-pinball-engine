@@ -1,6 +1,6 @@
 # Machine configuration
 
-Which pin on which board is which switch, coil, or lamp is **data, not code**. It lives in one config file that Godot reads at startup and sends to each board when it links. Game code never sees a pin number. It uses names like `flipper_left` and `sling_left_switch`.
+Which pin on which board is which switch, coil, lamp, LED light or servo is **data, not code**. It lives in one config file that Godot reads at startup and sends to each board when it links. Game code never sees a pin number. It uses names like `flipper_left` and `sling_left_switch`.
 
 ## The Hardware tab (P key)
 
@@ -10,6 +10,8 @@ The tab lists, from the top:
 - **Connection**
 - the **Boards**, each showing whether it's connected and whether its layout is burned, with a **Burn** button when it isn't
 - every **coil** and **switch**, with **Edit** and **Delete** buttons and live lamps for the switches
+- the **LED chains** and **lights** (see [Lighting](lighting.md))
+- the **servos**, with **Min / Home / Max** test buttons (see [Servos](servos.md))
 
 Screen size, volume and media settings are on the **Audio & Video** tab. See [Service menu](service-menu.md) for every tab.
 
@@ -25,7 +27,7 @@ Screen size, volume and media settings are on the **Audio & Video** tab. See [Se
 
 After saving, press **Burn to board** so the Teensy keeps the layout at power-off.
 
-Lamps only have an OFF/ON/BLINK button on the Hardware tab for now: lighting will be WS2812B LED chains, set up in a later version.
+Lamps (plain on/off outputs) only have an OFF/ON/BLINK button on the Hardware tab. Playfield lighting is WS2812B LED chains: see [Lighting](lighting.md).
 
 The rest of this page describes the file the Hardware tab edits. You can still edit it by hand.
 
@@ -70,9 +72,15 @@ The diagnostics panel (P key) shows which file was loaded, and lists any problem
   "lights": [
     { "name": "playfield",   "chain": "led_chain_0", "first": 0, "count": 30 },
     { "name": "shoot_again", "chain": "led_chain_0", "first": 0, "count": 1 }
+  ],
+  "servos": [
+    { "name": "ramp_gate", "board": "main", "pin": 5, "min_us": 1000, "max_us": 2000, "home": 0.5 },
+    { "name": "skull_jaw", "board": "main", "pca_addr": 64, "channel": 3, "min_us": 600, "max_us": 2400, "home": 0.0 }
   ]
 }
 ```
+
+(The shipped default has no servos; the two above show both kinds. JSON has no hex, so address 0x40 is written 64.)
 
 ### boards
 
@@ -146,6 +154,21 @@ Named LED ranges that game code and light shows use. One LED is an insert; more 
 
 Lights may overlap. Godot sends bigger lights first, and the board draws later ones on top, so an insert inside a strip always shows.
 
+### servos
+
+Hobby servos, on a board output pin or on a channel of a PCA9685 servo board (I2C). See [Servos](servos.md) for wiring.
+
+| Field | Meaning |
+|---|---|
+| `name` | What game code and shows call it. |
+| `board` | The board it's on (a PCA9685 hangs off that board's I2C pins). |
+| `pin` | An output pin, for a servo wired straight to the board. Up to 12 per board. Leave it out for a PCA9685 servo. |
+| `pca_addr`, `channel` | The PCA9685's I2C address (0x40..0x7F, set by its A0-A5 jumpers; written in decimal in JSON, 64..127) and its channel 0..15. Up to 4 PCA9685s per board. |
+| `min_us`, `max_us` | The pulse width at position 0 and at position 1, in microseconds (500..2500, min below max). 1000-2000 is safe for most servos. |
+| `home` | Where it goes at power-up and when a new layout arrives, 0..1 of its range. |
+
+A board can have 32 servos in all.
+
 ## Getting it onto the board
 
 When a board connects, Godot compares the board's layout fingerprint with its own. If they differ, it sends this file's layout to the board, which runs it straight away but only in RAM. **Burn** (P → Hardware → Boards) stores it in the board's EEPROM, so the board boots configured. This file stays the master copy: after changing it, burn again. See [Serial protocol](serial-protocol.md#burning-the-layout-and-fingerprints) for the details.
@@ -154,10 +177,11 @@ When a board connects, Godot compares the board's layout fingerprint with its ow
 
 Godot checks these before sending anything to a board (`MachineConfig.validate()`), and the board checks them again:
 
-- Every name is unique across inputs, coils, lamps, LED chains *and* lights, and has no spaces.
+- Every name is unique across inputs, coils, lamps, LED chains, lights *and* servos, and has no spaces.
 - A pin is used by only one thing per board, and never a reserved pin (on a Teensy 4.1: 0 and 1 are Serial1, 13 is the status LED, and 18 and 19 are I2C).
-- Inputs go on input pins, and coils, lamps and LED chains on output pins. A hold % between 1 and 99 needs a PWM pin.
+- Inputs go on input pins, and coils, lamps, LED chains and pin servos on output pins. A hold % between 1 and 99 needs a PWM pin.
 - A light fits on its chain, and a board has at most 4 chains and 96 lights.
+- Two servos never share a PCA9685 channel, a servo's pulse range is 500..2500 µs with min below max, and a board has at most 32 servos, 12 of them on pins, and 4 PCA9685s.
 - A trigger or EOS names an existing input on the same board, and a coil's trigger and EOS aren't the same input.
 - A board can have at most 24 inputs, 24 coils and 24 lamps (Teensy 4.1).
 
@@ -170,10 +194,12 @@ PinballIO.set_coil_rule(&"flipper_left", true)   # arm the flipper (e.g. when a 
 PinballIO.set_all_rules(false)                   # everything off (tilt, game over)
 PinballIO.pulse_coil(&"kickout")                 # fire once, using the coil's full_ms
 PinballIO.set_lamp(&"lamp_0", "BLINK")
+PinballIO.set_servo(&"ramp_gate", 1.0, 600, "SMOOTH")   # servo to 100 % over 0.6 s, easing in and out
+PinballIO.pulse_coil(&"shaker", 40, 30)        # a 40 ms pulse at 30 % power (needs a PWM pin)
 PinballIO.switch_changed.connect(_on_switch)     # _on_switch(switch_name: StringName, active: bool)
 PinballIO.coil_fired.connect(_on_coil_fired)     # a sling/pop fired on its own
 ```
 
 The `&"..."` is a StringName, Godot's interned string (a bit like `FName` in Unreal): fast to compare, which suits names used as IDs. A plain `"flipper_left"` works too.
 
-Rule and lamp calls are remembered, so you can make them before a board is even connected. PinballIO applies them as soon as the board is ready, and again after a watchdog trip.
+Rule, lamp, light and servo calls are remembered, so you can make them before a board is even connected. PinballIO applies them as soon as the board is ready, and again after a watchdog trip.

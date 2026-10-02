@@ -33,6 +33,7 @@ var coils: Array[IoDefs.CoilDef] = []
 var lamps: Array[IoDefs.LampDef] = []
 var chains: Array[IoDefs.ChainDef] = []   ## WS2812B LED chains
 var lights: Array[IoDefs.LightDef] = []   ## named LED ranges on those chains
+var servos: Array[IoDefs.ServoDef] = []   ## hobby servos, on board pins or PCA9685 channels
 var loaded_from := ""   ## which file the current layout came from
 
 
@@ -83,6 +84,7 @@ func to_dict() -> Dictionary:
 		"lamps": lamps.map(func(l: IoDefs.LampDef) -> Dictionary: return l.to_dict()),
 		"chains": chains.map(func(c: IoDefs.ChainDef) -> Dictionary: return c.to_dict()),
 		"lights": lights.map(func(l: IoDefs.LightDef) -> Dictionary: return l.to_dict()),
+		"servos": servos.map(func(s: IoDefs.ServoDef) -> Dictionary: return s.to_dict()),
 	}
 
 
@@ -93,6 +95,7 @@ func _apply_dict(data: Dictionary) -> void:
 	lamps.clear()
 	chains.clear()
 	lights.clear()
+	servos.clear()
 	for d: Dictionary in data.get("boards", []):
 		boards.append(IoDefs.BoardDef.from_dict(d))
 	for d: Dictionary in data.get("inputs", []):
@@ -105,6 +108,8 @@ func _apply_dict(data: Dictionary) -> void:
 		chains.append(IoDefs.ChainDef.from_dict(d))
 	for d: Dictionary in data.get("lights", []):
 		lights.append(IoDefs.LightDef.from_dict(d))
+	for d: Dictionary in data.get("servos", []):   # older config files have none
+		servos.append(IoDefs.ServoDef.from_dict(d))
 
 
 # ---------------------------------------------------------------- lookups
@@ -148,6 +153,13 @@ func find_light(light_name: StringName) -> IoDefs.LightDef:
 	for l in lights:
 		if l.name == light_name:
 			return l
+	return null
+
+
+func find_servo(servo_name: StringName) -> IoDefs.ServoDef:
+	for s in servos:
+		if s.name == servo_name:
+			return s
 	return null
 
 
@@ -198,6 +210,9 @@ func free_pins(board_id: StringName, caps: int, keep_pin := -1) -> Array[int]:
 	for c in chains:
 		if c.board == board_id:
 			used[c.pin] = true
+	for s in servos:
+		if s.board == board_id and not s.on_pca():
+			used[s.pin] = true
 	for pin in BoardTypes.pins_with(b.type, caps):
 		if pin == keep_pin or not used.has(pin):
 			out.append(pin)
@@ -224,12 +239,12 @@ func coils_using_input(input_name: StringName) -> PackedStringArray:
 	return out
 
 
-## True if some input, coil, lamp, chain or light other than [param except] already has this name.
+## True if some input, coil, lamp, chain, light or servo other than [param except] already has this name.
 func is_name_taken(item_name: StringName, except: StringName = &"") -> bool:
 	if item_name == except:
 		return false
 	return find_input(item_name) != null or find_coil(item_name) != null or find_lamp(item_name) != null \
-			or find_chain(item_name) != null or find_light(item_name) != null
+			or find_chain(item_name) != null or find_light(item_name) != null or find_servo(item_name) != null
 
 
 ## [param base] if it's free, otherwise base_2, base_3, ...
@@ -273,6 +288,10 @@ func remove_chain(chain_name: StringName) -> bool:
 
 func remove_light(light_name: StringName) -> void:
 	lights.assign(lights.filter(func(l: IoDefs.LightDef) -> bool: return l.name != light_name))
+
+
+func remove_servo(servo_name: StringName) -> void:
+	servos.assign(servos.filter(func(s: IoDefs.ServoDef) -> bool: return s.name != servo_name))
 
 
 # ---------------------------------------------------------------- validation
@@ -351,6 +370,26 @@ func validate() -> PackedStringArray:
 			errors.append("light '%s' (LEDs %d-%d) doesn't fit on '%s' (%d LEDs)" % [
 					l.name, l.first, l.first + l.count - 1, c.name, c.count])
 
+	var pca_channels := {}   # "board:addr:channel" -> servo using it
+	for s in servos:
+		_check_name(s.name, "servo", names, errors)
+		var b := _check_board(s.board, s.name, errors)
+		if s.on_pca():
+			if s.pca_addr < 0x40 or s.pca_addr > 0x7F:
+				errors.append("servo '%s': PCA9685 address must be 0x40..0x7F" % s.name)
+			if s.channel < 0 or s.channel > 15:
+				errors.append("servo '%s': PCA9685 channel must be 0..15" % s.name)
+			var key := "%s:%d:%d" % [s.board, s.pca_addr, s.channel]
+			if pca_channels.has(key):
+				errors.append("'%s' and '%s' both use PCA 0x%02X channel %d" % [pca_channels[key], s.name, s.pca_addr, s.channel])
+			pca_channels[key] = s.name
+		elif b:
+			_check_pin(b, s.pin, BoardTypes.CAP_OUT, s.name, used_pins, errors)
+		if s.min_us < IoDefs.SERVO_LOWEST_US or s.max_us > IoDefs.SERVO_HIGHEST_US or s.min_us >= s.max_us:
+			errors.append("servo '%s' pulse must be %d..%d us, min below max" % [s.name, IoDefs.SERVO_LOWEST_US, IoDefs.SERVO_HIGHEST_US])
+		if s.home < 0.0 or s.home > 1.0:
+			errors.append("servo '%s' home must be 0..100 %%" % s.name)
+
 	for b in boards:
 		if not BoardTypes.has_type(b.type):
 			continue
@@ -361,6 +400,9 @@ func validate() -> PackedStringArray:
 			"lamps": plan.lamp_names.size(),
 			"chains": plan.chain_names.size(),
 			"zones": plan.light_names.size(),
+			"servos": plan.servo_names.size(),
+			"pin_servos": servos.filter(func(s: IoDefs.ServoDef) -> bool: return s.board == b.id and not s.on_pca()).size(),
+			"pcas": pca_addrs(b.id).size(),
 		}
 		for kind: String in counts:
 			var count: int = counts[kind]
@@ -415,7 +457,7 @@ func _check_coil_input(c: IoDefs.CoilDef, input_name: StringName, role: String, 
 # ---------------------------------------------------------------- per-board plan
 
 ## Work out what [param board] gets told: local numbers for each of its
-## inputs/coils/lamps/chains (in config order) and lights (biggest first),
+## inputs/coils/lamps/chains/servos (in config order) and lights (biggest first),
 ## and the CFG lines to send.
 ## Doesn't validate; call validate() first.
 func build_plan(board: IoDefs.BoardDef) -> IoDefs.BoardPlan:
@@ -458,6 +500,18 @@ func build_plan(board: IoDefs.BoardDef) -> IoDefs.BoardPlan:
 		plan.lines.append("CFG ZONE %d %d %d %d" % [plan.light_names.size(), chain_index, l.first, l.count])
 		plan.light_names.append(l.name)
 
+	# Servos: first one CFG PCA per PCA9685 board in use (numbered in order of
+	# address), then the servos, on a pin or as P<pca>:<channel>.
+	var addrs := pca_addrs(board.id)
+	for n in addrs.size():
+		plan.lines.append("CFG PCA %d %02X" % [n, addrs[n]])
+	for s in servos:
+		if s.board != board.id:
+			continue
+		var output := "P%d:%d" % [addrs.find(s.pca_addr), s.channel] if s.on_pca() else str(s.pin)
+		plan.lines.append("CFG SERVO %d %s %d %d %d" % [plan.servo_names.size(), output, s.min_us, s.max_us, roundi(s.home * 1000.0)])
+		plan.servo_names.append(s.name)
+
 	plan.fingerprint = layout_hash(plan.lines)
 	plan.lines.append("CFG DONE")
 	return plan
@@ -482,6 +536,16 @@ static func fnv1a(data: PackedByteArray) -> int:
 	for b in data:
 		h = ((h ^ b) * 16777619) & 0xFFFFFFFF
 	return h
+
+
+## The PCA9685 addresses servos on [param board_id] use, lowest first (PCA 0, 1, ... on the board).
+func pca_addrs(board_id: StringName) -> Array[int]:
+	var addrs: Array[int] = []
+	for s in servos:
+		if s.board == board_id and s.on_pca() and not addrs.has(s.pca_addr):
+			addrs.append(s.pca_addr)
+	addrs.sort()
+	return addrs
 
 
 ## Lights on [param board_id], biggest first; equal sizes keep config order.

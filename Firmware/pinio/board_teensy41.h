@@ -6,7 +6,7 @@
 //
 // Pin plan, looking at the Teensy with the USB port at the top:
 //
-//   LEFT side  (0..12, then 24..32)  = OUTPUTS (coils, lamps, WS2812B LED chains)
+//   LEFT side  (0..12, then 24..32)  = OUTPUTS (coils, lamps, WS2812B LED chains, servos)
 //   RIGHT side (23..13, then 41..33) = INPUTS  (switches)
 //
 //   Pin(s)                     Role
@@ -16,7 +16,7 @@
 //   13                         reserved  - onboard LED, used as the status LED.
 //                              Can't be an input: the LED drags the pull-up down.
 //   14-17, 20-23, 33-41        input (INPUT_PULLUP, switch to GND)
-//   18, 19                     reserved  - I2C (Wire: 18 = SDA, 19 = SCL)
+//   18, 19                     reserved  - I2C (Wire: 18 = SDA, 19 = SCL), for PCA9685 servo boards
 //
 // Notes for later:
 //   - 24/25 are also the Wire2 I2C bus and 16/17 are Wire1. They're in use as
@@ -45,6 +45,13 @@ const uint8_t MAX_LAMPS  = 24;
 const uint8_t  MAX_CHAINS         = 4;
 const uint16_t MAX_LEDS_PER_CHAIN = 300;
 const uint8_t  MAX_ZONES          = 96;   // named lights: strips, sections, single inserts
+
+// Hobby servos (see servos.h): on any output pin (Servo library, up to 12),
+// or on PCA9685 boards on the I2C bus (pins 18/19), 16 servos each.
+#define BOARD_HAS_SERVOS 1
+const uint8_t MAX_SERVO_COUNT = 32;   // all servos, pins + PCA channels
+const uint8_t MAX_PIN_SERVOS  = 12;   // the Servo library's limit on a Teensy 4
+const uint8_t MAX_PCAS        = 4;
 
 // Room for the layout text that CFG SAVE burns into EEPROM: the Teensy 4.1
 // has 4284 bytes of EEPROM, minus the 10-byte header in front of the text.

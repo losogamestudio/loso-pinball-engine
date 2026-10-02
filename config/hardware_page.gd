@@ -1,7 +1,7 @@
 extends MarginContainer
 ## HardwarePage — the "Hardware" tab of the service menu: connecting boards,
-## burning layouts, and the machine's coils, switches and lamps, with wizards
-## to add/edit them.
+## burning layouts, and the machine's coils, switches, LED chains, lights,
+## servos and lamps, with wizards to add/edit them.
 ##
 ## Everything here edits MachineConfig (the master copy on the Pi/PC) and
 ## saves it to user://machine_config.json. Linked boards pick up changes
@@ -12,6 +12,10 @@ const CoilWizardScript := preload("res://config/coil_wizard.gd")
 const InputEditorScript := preload("res://config/input_editor.gd")
 const ChainEditorScript := preload("res://config/chain_editor.gd")
 const LightEditorScript := preload("res://config/light_editor.gd")
+const ServoEditorScript := preload("res://config/servo_editor.gd")
+
+## A servo row's Min / Home / Max buttons move over this long, easing in and out.
+const SERVO_TEST_MS := 1000
 
 ## The Test button on a light row runs this, and pressing it again turns it off.
 const TEST_EFFECT := "RAINBOW"
@@ -86,6 +90,7 @@ func _rebuild() -> void:
 	_build_switches()
 	_build_chains()
 	_build_lights()
+	_build_servos()
 	_build_lamps()
 	_build_footer()
 
@@ -275,6 +280,31 @@ func _test_light(light_name: StringName) -> void:
 	_rebuild()   # the row shows the light's effect
 
 
+## Hobby servos, on board pins or PCA9685 channels, with quick Min / Home / Max.
+func _build_servos() -> void:
+	var add: Array[Control] = [UiKit.button("+ Add servo", _open_servo_editor.bind(&""), UiKit.PRIMARY)]
+	var body := UiKit.section(_list, "Servos", add)
+	if MachineConfig.servos.is_empty():
+		body.add_child(UiKit.note("No servos yet. A servo goes on a PCA9685 servo board (I2C, 16 each) or on a free output pin."))
+		return
+	for s in MachineConfig.servos:
+		var row := UiKit.row_card(body)
+		var at: float = PinballIO.get_servo(s.name)["position"]
+		var detail := "%d-%d µs · home %d%% · at %d%%" % [s.min_us, s.max_us, roundi(s.home * 100.0), roundi(at * 100.0)]
+		row.add_child(UiKit.name_block("%s · %s" % [s.name, s.output_text()], detail))
+		row.add_child(UiKit.button("Min", _test_servo.bind(s.name, 0.0), UiKit.TEST))
+		row.add_child(UiKit.button("Home", _test_servo.bind(s.name, s.home), UiKit.TEST))
+		row.add_child(UiKit.button("Max", _test_servo.bind(s.name, 1.0), UiKit.TEST))
+		row.add_child(UiKit.button("Edit", _open_servo_editor.bind(s.name)))
+		row.add_child(UiKit.button("Delete", _ask_delete_servo.bind(s.name), UiKit.DANGER))
+	body.add_child(UiKit.note("Min / Home / Max move the servo over 1 s. Wiring and power: Docs/servos.md."))
+
+
+func _test_servo(servo_name: StringName, position: float) -> void:
+	PinballIO.set_servo(servo_name, position, SERVO_TEST_MS, "SMOOTH")
+	_rebuild()   # the row shows where it's going
+
+
 ## One button per lamp that cycles OFF / ON / BLINK. These are plain on/off
 ## output pins; LED chains are above.
 func _build_lamps() -> void:
@@ -367,6 +397,12 @@ func _open_chain_editor(chain_name: StringName) -> void:
 	_show_editor(editor)
 
 
+func _open_servo_editor(servo_name: StringName) -> void:
+	var editor: Node = ServoEditorScript.new()
+	editor.open(servo_name)
+	_show_editor(editor)
+
+
 func _open_light_editor(light_name: StringName) -> void:
 	var editor: Node = LightEditorScript.new()
 	editor.open(light_name)
@@ -440,6 +476,12 @@ func _ask_delete_chain(chain_name: StringName) -> void:
 func _ask_delete_light(light_name: StringName) -> void:
 	_ask("Delete light '%s'? Light shows that use it will skip it." % light_name, func() -> void:
 		MachineConfig.remove_light(light_name)
+		_save_and_apply())
+
+
+func _ask_delete_servo(servo_name: StringName) -> void:
+	_ask("Delete servo '%s'? Light shows that move it will skip it." % servo_name, func() -> void:
+		MachineConfig.remove_servo(servo_name)
 		_save_and_apply())
 
 
