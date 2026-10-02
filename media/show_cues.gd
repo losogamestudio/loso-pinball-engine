@@ -25,7 +25,8 @@ const DEFAULT_MS := 500
 
 
 ## Every cue(...) key on the animation's enabled Call Method tracks, sorted by
-## time: [{time, light, effect, color, ms, color2}].
+## time: [{time, light, effect, color, ms, color2, track}] (track = which
+## animation track the key is on, for editors).
 static func read(anim: Animation) -> Array[Dictionary]:
 	var cues: Array[Dictionary] = []
 	if anim == null:
@@ -44,6 +45,7 @@ static func read(anim: Animation) -> Array[Dictionary]:
 				"color": args[2] if args.size() > 2 and args[2] is Color else Color.WHITE,
 				"ms": int(args[3]) if args.size() > 3 and int(args[3]) > 0 else DEFAULT_MS,
 				"color2": args[4] if args.size() > 4 and args[4] is Color else Color.BLACK,
+				"track": track,
 			})
 	# Stable by time, so two cues at the same moment keep their track order.
 	cues.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["time"] < b["time"])

@@ -221,7 +221,7 @@ func _update_preview_note(_peer := "") -> void:
 		_preview_note.text = "The editor at %s is driving the lights." % Shows.preview_peer
 	else:
 		_preview_note.text = "Listening on UDP port %d. In the editor's Light Show dock, set Game at: %s" % [
-				Shows.PREVIEW_PORT, _local_addresses()]
+				Shows.preview_port, _local_addresses()]
 
 
 ## This machine's network addresses (IPv4, not loopback), for the editor to reach it.

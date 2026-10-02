@@ -3,14 +3,16 @@ extends VBoxContainer
 ## ShowDock — the "Light Show" dock in the Godot editor (addons/loso_show_tools).
 ##
 ## Open a light show scene (assets/shows/<name>.tscn) and pick its "show"
-## animation in the Animation panel. Then this dock:
-##   * shows what each light is doing at the playhead (a color swatch per light)
-##   * with "Send to game" on, sends every change to the running game over UDP,
-##     so the real LEDs follow while you play or scrub the timeline (the game
-##     needs "Show preview" on, in Service > Audio & Video)
-##   * adds cues at the playhead: pick a light, effect, colors and speed, then
-##     "Add cue at playhead" puts the key on that light's track (one track per
-##     light), with undo
+## animation in the Animation panel. Then this dock has one row per light,
+## showing (and editing) what that light does at the playhead:
+##   * a swatch, and the time of the key it's following ("key at 1.00 s")
+##   * effect, color, color 2 and speed fields: changing one edits that key,
+##     with undo (or adds a key at the playhead if the light has none yet)
+##   * "+" adds a new key at the playhead (a copy, ready to change), and
+##     "✕" deletes the key the light is following
+## With "Send to game" on, every change also goes to the running game over UDP,
+## so the real LEDs follow while you play, scrub or edit (the game needs
+## "Show preview" on, in Service > Audio & Video).
 ##
 ## Godot doesn't call Call Method keys while you preview in the editor, so this
 ## reads the keys itself (ShowCues) and works out each light's cue at the playhead.
@@ -21,6 +23,7 @@ const PING_EVERY_MS := 1000
 const ANSWER_TIMEOUT_MS := 3000      ## no PONG for this long = the game isn't listening
 const REREAD_EVERY_MS := 500         ## re-read the keys this often too, in case a change was missed
 const OFF_COLOR := Color(0.12, 0.12, 0.14)
+const AT_KEY := 0.0005               ## the playhead counts as "on" a key this close to it (seconds)
 
 ## The editor's undo history (set by plugin.gd). Null in tests: changes apply directly.
 var undo_redo: EditorUndoRedoManager
@@ -34,27 +37,36 @@ var _reread_ms := 0
 
 var _udp := PacketPeerUDP.new()
 var _host := "127.0.0.1"
+## The game's show-preview UDP port. Tests change it, so they don't clash with a running game.
+var port := ShowCues.PREVIEW_PORT
 var _address := ""               ## _host resolved to an IP, "" = couldn't
 var _live := false
 var _next_ping_ms := 0
 var _last_answer_ms := -ANSWER_TIMEOUT_MS
 var _game_lights: PackedStringArray = []   ## from the game's PONG
 var _sent := {}                  ## light -> cue_id last sent to the game
-var _shown := {}                 ## light -> cue_id on the swatches
+var _shown := {}                 ## light -> cue_id shown in its row
 
 # UI
 var _status: Label
 var _live_box: CheckBox
 var _host_edit: LineEdit
 var _link_label: Label
-var _swatches: VBoxContainer
-var _swatch_buttons := {}        ## light -> Button
-var _light_pick: OptionButton
-var _effect_pick: OptionButton
-var _color1: ColorPickerButton
-var _color2: ColorPickerButton
-var _ms_spin: SpinBox
-var _add_button: Button
+var _rows_box: VBoxContainer
+var _rows := {}                  ## light -> LightRow
+var _row_names: Array[StringName] = []
+
+
+## The controls of one light's row.
+class LightRow:
+	var swatch: TextureRect
+	var at: Label                ## "key at 1.00 s" / "no key yet"
+	var effect: OptionButton
+	var color1: ColorPickerButton
+	var color2: ColorPickerButton
+	var ms: SpinBox
+	var add: Button
+	var delete: Button
 
 
 func _ready() -> void:
@@ -65,7 +77,7 @@ func _ready() -> void:
 		_host_edit.text = _host
 	_resolve_host()
 	_udp.bind(0)   # any free port, so the game's PONG has somewhere to come back to
-	_refresh_light_list()
+	_refresh_rows()
 
 
 func _exit_tree() -> void:
@@ -91,10 +103,10 @@ func set_show(scene_root: Node) -> void:
 				_anim = _player.get_animation(ShowCues.ANIMATION_NAME)
 				_anim.changed.connect(_mark_dirty)
 				break
-	_cues_dirty = true
+	_cues = ShowCues.read(_anim)
+	_cues_dirty = false
 	_sent.clear()
-	_shown.clear()
-	_refresh_light_list()
+	_refresh_rows()
 
 
 func _mark_dirty() -> void:
@@ -108,22 +120,28 @@ func playhead() -> float:
 	return _player.current_animation_position
 
 
+## Read the keys again if they changed since last time.
+func _reread_if_needed() -> void:
+	var now := Time.get_ticks_msec()
+	if not _cues_dirty and now < _reread_ms:
+		return
+	_cues = ShowCues.read(_anim)
+	_cues_dirty = false
+	_reread_ms = now + REREAD_EVERY_MS
+	if _light_names() != _row_names:
+		_refresh_rows()   # a light was added to (or gone from) the show
+
+
 # ---------------------------------------------------------------- every frame
 
 func _process(_delta: float) -> void:
 	_poll_udp()
 	if _show != null and not is_instance_valid(_show):
 		set_show(null)
-	var now := Time.get_ticks_msec()
-	if _cues_dirty or now >= _reread_ms:
-		var old_count := _cues.size()
-		_cues = ShowCues.read(_anim)
-		_cues_dirty = false
-		_reread_ms = now + REREAD_EVERY_MS
-		if _cues.size() != old_count:
-			_refresh_light_list()
+	_reread_if_needed()
 	var time := playhead()
-	_add_button.disabled = time < 0.0
+	for row: LightRow in _rows.values():
+		row.add.disabled = time < 0.0
 	if _show == null:
 		_status.text = "Open a light show scene (assets/shows/) to preview it."
 		return
@@ -131,17 +149,22 @@ func _process(_delta: float) -> void:
 		_status.text = "%s: pick the \"show\" animation in the Animation panel." % _show.name
 		return
 	_status.text = "%s at %.2f s, %d cues" % [_show.scene_file_path.get_file().get_basename(), time, _cues.size()]
-	_apply_state(ShowCues.state_at(_cues, time))
+	_apply_state(ShowCues.state_at(_cues, time), time)
 
 
-## Bring the swatches (and the game, when live) to the lights' state at the playhead.
-func _apply_state(state: Dictionary) -> void:
-	for light: StringName in _swatch_buttons:
+## Bring the rows (and the game, when live) to the lights' state at the playhead.
+func _apply_state(state: Dictionary, time: float) -> void:
+	for light: StringName in _rows:
 		var cue: Dictionary = state.get(light, {})
 		var id := ShowCues.cue_id(cue)
 		if _shown.get(light, "") != id:
 			_shown[light] = id
-			_paint_swatch(light, cue)
+			_show_cue(light, cue)
+		var row: LightRow = _rows[light]
+		row.delete.disabled = cue.is_empty()
+		if not cue.is_empty():
+			var on_key: bool = absf(cue["time"] - time) < AT_KEY
+			row.at.text = "key here" if on_key else "key at %.2f s" % cue["time"]
 		if _live and _game_answering() and _sent.get(light, "") != id:
 			if _send(ShowCues.fx_line(light, cue)):
 				_sent[light] = id
@@ -160,7 +183,7 @@ func _poll_udp() -> void:
 			words.remove_at(0)
 			if words != _game_lights:
 				_game_lights = words
-				_refresh_light_list()
+				_refresh_rows()
 	if _live and now >= _next_ping_ms:
 		_next_ping_ms = now + PING_EVERY_MS
 		_send("PING")
@@ -172,7 +195,7 @@ func _poll_udp() -> void:
 		elif _game_answering():
 			_link_label.text = "Game answering at %s: %d lights." % [_address, _game_lights.size()]
 		else:
-			_link_label.text = "No answer from %s:%d. Is the game running with Show preview on?" % [_address, ShowCues.PREVIEW_PORT]
+			_link_label.text = "No answer from %s:%d. Is the game running with Show preview on?" % [_address, port]
 
 
 func _game_answering() -> bool:
@@ -182,7 +205,7 @@ func _game_answering() -> bool:
 func _send(line: String) -> bool:
 	if _address == "":
 		return false
-	_udp.set_dest_address(_address, ShowCues.PREVIEW_PORT)
+	_udp.set_dest_address(_address, port)
 	return _udp.put_packet(line.to_utf8_buffer()) == OK
 
 
@@ -215,7 +238,7 @@ func _resolve_host() -> void:
 	_address = _host if _host.is_valid_ip_address() else IP.resolve_hostname(_host, IP.TYPE_IPV4)
 
 
-# ---------------------------------------------------------------- adding cues
+# ---------------------------------------------------------------- editing keys
 
 ## Add (or replace) a cue on a light's track at a time, with undo when in the editor.
 func add_cue(time: float, light: StringName, effect: String, color: Color, ms: int, color2: Color) -> void:
@@ -239,13 +262,57 @@ func add_cue(time: float, light: StringName, effect: String, color: Color, ms: i
 	_cues_dirty = true
 
 
+## Change the key a light follows at the playhead (or add one at the playhead
+## if it has none yet). Several changes in a row (dragging a color) are one undo step.
+func edit_at_playhead(light: StringName, effect: String, color: Color, ms: int, color2: Color) -> void:
+	var time := playhead()
+	if _anim == null or time < 0.0:
+		return
+	_reread_if_needed()
+	var cue: Dictionary = ShowCues.state_at(_cues, time).get(light, {})
+	if cue.is_empty():
+		# No key yet: the first change makes one. Its effect still reads OFF if
+		# a color or speed was changed first, which would light nothing.
+		add_cue(time, light, "SOLID" if effect == "OFF" else effect, color, ms, color2)
+		return
+	var track: int = cue["track"]
+	var index := _anim.track_find_key(track, cue["time"], Animation.FIND_MODE_APPROX)
+	if index < 0:
+		return
+	var value := ShowCues.cue_key(light, effect, color, ms, color2)
+	_do([["track_set_key_value", track, index, value]],
+			[["track_set_key_value", track, index, _anim.track_get_key_value(track, index)]],
+			"Edit light cue for %s at %.2f s" % [light, cue["time"]], true)
+	_cues_dirty = true
+
+
+## Delete the key a light follows at the playhead.
+func delete_at_playhead(light: StringName) -> void:
+	var time := playhead()
+	if _anim == null or time < 0.0:
+		return
+	_reread_if_needed()
+	var cue: Dictionary = ShowCues.state_at(_cues, time).get(light, {})
+	if cue.is_empty():
+		return
+	var track: int = cue["track"]
+	var index := _anim.track_find_key(track, cue["time"], Animation.FIND_MODE_APPROX)
+	if index < 0:
+		return
+	_do([["track_remove_key", track, index]],
+			[["track_insert_key", track, _anim.track_get_key_time(track, index), _anim.track_get_key_value(track, index)]],
+			"Delete light cue for %s at %.2f s" % [light, cue["time"]])
+	_cues_dirty = true
+
+
 ## Run Animation calls through the editor's undo history (or directly in tests).
-func _do(do_calls: Array, undo_calls: Array, action: String) -> void:
+## merge = repeated actions with the same name become one undo step.
+func _do(do_calls: Array, undo_calls: Array, action: String, merge := false) -> void:
 	if undo_redo == null:
 		for c: Array in do_calls:
 			_anim.callv(c[0], c.slice(1))
 		return
-	undo_redo.create_action(action)
+	undo_redo.create_action(action, UndoRedo.MERGE_ENDS if merge else UndoRedo.MERGE_DISABLE)
 	for c: Array in do_calls:   # add_do_method(object, method, args...)
 		undo_redo.add_do_method.callv([_anim] + c)
 	for c: Array in undo_calls:
@@ -253,37 +320,26 @@ func _do(do_calls: Array, undo_calls: Array, action: String) -> void:
 	undo_redo.commit_action()
 
 
-func _on_add_pressed() -> void:
+## A row's field changed: edit the key it follows.
+func _on_row_changed(_value: Variant, light: StringName) -> void:
+	var row: LightRow = _rows[light]
+	edit_at_playhead(light, IoDefs.EFFECTS[maxi(row.effect.selected, 0)], row.color1.color,
+			int(row.ms.value), row.color2.color)
+
+
+## "+": a new key at the playhead with the row's settings, ready to change.
+func _on_row_add(light: StringName) -> void:
 	var time := playhead()
-	if time >= 0.0:
-		add_cue(time, _picked_light(), _picked_effect(), _color1.color, int(_ms_spin.value), _color2.color)
-
-
-## Send the picked settings to the game now, without adding a key.
-func _on_try_pressed() -> void:
-	var light := _picked_light()
-	if light == &"":
+	if time < 0.0:
 		return
-	var cue := {"time": 0.0, "light": light, "effect": _picked_effect(), "color": _color1.color,
-			"ms": int(_ms_spin.value), "color2": _color2.color}
-	_send(ShowCues.fx_line(light, cue))
-	_sent.erase(light)   # the timeline takes over again on the next change
-	_shown.erase(light)
+	var row: LightRow = _rows[light]
+	var effect: String = IoDefs.EFFECTS[maxi(row.effect.selected, 0)]
+	if effect == "OFF":
+		effect = "SOLID"   # a new key that does nothing isn't much use
+	add_cue(time, light, effect, row.color1.color, int(row.ms.value), row.color2.color)
 
 
-## Tap a light's swatch: load its cue at the playhead into the "New cue" fields.
-func _on_swatch_pressed(light: StringName) -> void:
-	_select_light(light)
-	var cue: Dictionary = ShowCues.state_at(_cues, maxf(playhead(), 0.0)).get(light, {})
-	if cue.is_empty():
-		return
-	_effect_pick.select(maxi(IoDefs.EFFECTS.find(cue["effect"]), 0))
-	_color1.color = cue["color"]
-	_color2.color = cue["color2"]
-	_ms_spin.value = cue["ms"]
-
-
-# ---------------------------------------------------------------- lights list and swatches
+# ---------------------------------------------------------------- the light rows
 
 ## Light names: the game's (when it answers), else this PC's machine config,
 ## plus any light already used in the show.
@@ -312,33 +368,21 @@ func _config_light_names() -> PackedStringArray:
 	return names
 
 
-func _refresh_light_list() -> void:
-	if _light_pick == null:
+## Build one row per light.
+func _refresh_rows() -> void:
+	if _rows_box == null:
 		return
-	var names := _light_names()
-	var keep := _picked_light()
-	_light_pick.clear()
-	for n in names:
-		_light_pick.add_item(String(n))
-		_light_pick.set_item_metadata(_light_pick.item_count - 1, n)
-	_select_light(keep)
-	# One swatch per light.
-	for child in _swatches.get_children():
+	_row_names = _light_names()
+	for child in _rows_box.get_children():
 		child.queue_free()
-	_swatch_buttons.clear()
+	_rows.clear()
 	_shown.clear()
-	for n in names:
-		var b := Button.new()
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.flat = true
-		b.tooltip_text = "Tap to load this light's cue into New cue"
-		b.pressed.connect(_on_swatch_pressed.bind(n))
-		_swatches.add_child(b)
-		_swatch_buttons[n] = b
-		_paint_swatch(n, {})
+	for n in _row_names:
+		_rows_box.add_child(_make_row(n))
+		_show_cue(n, {})
 	var not_on_game: Array[String] = []
 	if not _game_lights.is_empty():
-		for n in names:
+		for n in _row_names:
 			if not _game_lights.has(String(n)):
 				not_on_game.append(String(n))
 	if not not_on_game.is_empty():
@@ -346,40 +390,94 @@ func _refresh_light_list() -> void:
 		warn.text = "Not on the game machine: " + ", ".join(not_on_game)
 		warn.modulate = Color(1, 0.6, 0.5)
 		warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_swatches.add_child(warn)
+		_rows_box.add_child(warn)
 
 
-func _paint_swatch(light: StringName, cue: Dictionary) -> void:
-	var b: Button = _swatch_buttons.get(light)
-	if b == null:
+func _make_row(light: StringName) -> Control:
+	var row := LightRow.new()
+	_rows[light] = row
+	var panel := PanelContainer.new()   # a box around each light
+	var lines := VBoxContainer.new()
+	panel.add_child(lines)
+
+	# Line 1: swatch, name, which key, + and ✕.
+	var top := HBoxContainer.new()
+	lines.add_child(top)
+	row.swatch = TextureRect.new()
+	row.swatch.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	row.swatch.custom_minimum_size = Vector2(20, 20)
+	top.add_child(row.swatch)
+	var name_label := Label.new()
+	name_label.text = String(light)
+	name_label.size_flags_horizontal = SIZE_EXPAND_FILL
+	name_label.clip_text = true
+	top.add_child(name_label)
+	row.at = Label.new()
+	row.at.modulate = Color(1, 1, 1, 0.6)
+	top.add_child(row.at)
+	row.add = Button.new()
+	row.add.text = "+"
+	row.add.tooltip_text = "New key at the playhead (a copy of these settings)"
+	row.add.pressed.connect(_on_row_add.bind(light))
+	top.add_child(row.add)
+	row.delete = Button.new()
+	row.delete.text = "✕"
+	row.delete.tooltip_text = "Delete the key this light is following"
+	row.delete.pressed.connect(delete_at_playhead.bind(light))
+	top.add_child(row.delete)
+
+	# Line 2: effect, colors, speed. Changing any edits the key.
+	var fields := HBoxContainer.new()
+	lines.add_child(fields)
+	row.effect = OptionButton.new()
+	for effect in IoDefs.EFFECTS:
+		row.effect.add_item(effect)
+		row.effect.set_item_tooltip(row.effect.item_count - 1, IoDefs.EFFECT_HELP.get(effect, ""))
+	row.effect.size_flags_horizontal = SIZE_EXPAND_FILL
+	row.effect.fit_to_longest_item = false
+	row.effect.item_selected.connect(_on_row_changed.bind(light))
+	fields.add_child(row.effect)
+	row.color1 = _color_button("Color")
+	row.color1.color_changed.connect(_on_row_changed.bind(light))
+	fields.add_child(row.color1)
+	row.color2 = _color_button("Color 2 (BLINK, CHASE, WIPE, SPARKLE background)")
+	row.color2.color_changed.connect(_on_row_changed.bind(light))
+	fields.add_child(row.color2)
+	row.ms = SpinBox.new()
+	row.ms.min_value = 1
+	row.ms.max_value = 600000
+	row.ms.step = 1   # any ms; the arrows still move 50 at a time
+	row.ms.custom_arrow_step = 50
+	row.ms.tooltip_text = "Speed in ms: the period, or the duration for FADE and WIPE"
+	row.ms.custom_minimum_size.x = 76
+	row.ms.value_changed.connect(_on_row_changed.bind(light))
+	fields.add_child(row.ms)
+	return panel
+
+
+## Show a light's cue in its row: swatch, and the fields (without firing edits).
+func _show_cue(light: StringName, cue: Dictionary) -> void:
+	var row: LightRow = _rows.get(light)
+	if row == null:
 		return
 	var effect: String = cue.get("effect", "OFF")
-	var color: Color = OFF_COLOR if effect == "OFF" else cue["color"]
 	var image := Image.create(18, 18, false, Image.FORMAT_RGBA8)
-	image.fill(color)
+	image.fill(OFF_COLOR if effect == "OFF" else cue["color"])
 	if effect == "RAINBOW":   # stripes of hue, since its color isn't a setting
 		for x in 18:
 			for y in 18:
 				image.set_pixel(x, y, Color.from_hsv(x / 18.0, 0.9, 1.0))
-	b.icon = ImageTexture.create_from_image(image)
-	b.text = String(light) if effect == "OFF" else "%s  %s %d ms" % [light, effect, cue["ms"]]
-
-
-func _select_light(light: StringName) -> void:
-	for i in _light_pick.item_count:
-		if _light_pick.get_item_metadata(i) == light:
-			_light_pick.select(i)
-			return
-
-
-func _picked_light() -> StringName:
-	if _light_pick == null or _light_pick.selected < 0:
-		return &""
-	return _light_pick.get_item_metadata(_light_pick.selected)
-
-
-func _picked_effect() -> String:
-	return IoDefs.EFFECTS[maxi(_effect_pick.selected, 0)]
+	row.swatch.texture = ImageTexture.create_from_image(image)
+	if cue.is_empty():
+		row.at.text = "no key yet"
+		row.effect.select(IoDefs.EFFECTS.find("OFF"))
+		return
+	row.effect.select(maxi(IoDefs.EFFECTS.find(cue["effect"]), 0))   # select() doesn't fire item_selected
+	if not row.color1.color.is_equal_approx(cue["color"]):
+		row.color1.color = cue["color"]       # setting it doesn't fire color_changed
+	if not row.color2.color.is_equal_approx(cue["color2"]):
+		row.color2.color = cue["color2"]
+	row.ms.set_value_no_signal(cue["ms"])
 
 
 # ---------------------------------------------------------------- UI
@@ -422,50 +520,11 @@ func _build_ui() -> void:
 	add_child(_link_label)
 
 	add_child(_heading("Lights at the playhead"))
-	_swatches = VBoxContainer.new()
-	add_child(_swatches)
-
-	add_child(_heading("New cue"))
-	var grid := GridContainer.new()
-	grid.columns = 2
-	add_child(grid)
-	_light_pick = OptionButton.new()
-	_light_pick.size_flags_horizontal = SIZE_EXPAND_FILL
-	_grid_row(grid, "Light", _light_pick)
-	_effect_pick = OptionButton.new()
-	for effect in IoDefs.EFFECTS:
-		_effect_pick.add_item(effect)
-		_effect_pick.set_item_tooltip(_effect_pick.item_count - 1, IoDefs.EFFECT_HELP.get(effect, ""))
-	_effect_pick.select(IoDefs.EFFECTS.find("SOLID"))
-	_effect_pick.size_flags_horizontal = SIZE_EXPAND_FILL
-	_grid_row(grid, "Effect", _effect_pick)
-	_color1 = _color_button(Color.WHITE)
-	_grid_row(grid, "Color", _color1)
-	_color2 = _color_button(Color.BLACK)
-	_grid_row(grid, "Color 2", _color2)
-	_ms_spin = SpinBox.new()
-	_ms_spin.min_value = 1
-	_ms_spin.max_value = 600000
-	_ms_spin.value = ShowCues.DEFAULT_MS
-	_ms_spin.suffix = "ms"
-	_ms_spin.size_flags_horizontal = SIZE_EXPAND_FILL
-	_grid_row(grid, "Speed", _ms_spin)
-
-	var buttons := HBoxContainer.new()
-	_add_button = Button.new()
-	_add_button.text = "Add cue at playhead"
-	_add_button.size_flags_horizontal = SIZE_EXPAND_FILL
-	_add_button.pressed.connect(_on_add_pressed)
-	buttons.add_child(_add_button)
-	var try_button := Button.new()
-	try_button.text = "Try"
-	try_button.tooltip_text = "Send these settings to the game now, without adding a key"
-	try_button.pressed.connect(_on_try_pressed)
-	buttons.add_child(try_button)
-	add_child(buttons)
+	_rows_box = VBoxContainer.new()
+	add_child(_rows_box)
 
 	var help := Label.new()
-	help.text = "A key at the same moment on the same light is replaced. Ctrl+Z undoes. Move or delete keys on the Animation timeline as usual; select a key there to change its settings in the Inspector."
+	help.text = "Each row shows the key a light follows at the playhead. Change its effect, colors or speed to edit that key (a light with no key yet gets one at the playhead). + adds a new key at the playhead, ✕ deletes the key. Ctrl+Z undoes. Move keys on the Animation timeline as usual."
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.modulate = Color(1, 1, 1, 0.6)
 	add_child(help)
@@ -478,19 +537,11 @@ func _heading(text: String) -> Label:
 	return l
 
 
-func _grid_row(grid: GridContainer, label_text: String, field: Control) -> void:
-	var l := Label.new()
-	l.text = label_text
-	grid.add_child(l)
-	grid.add_child(field)
-
-
-func _color_button(color: Color) -> ColorPickerButton:
+func _color_button(tip: String) -> ColorPickerButton:
 	var b := ColorPickerButton.new()
-	b.color = color
 	b.edit_alpha = false
-	b.custom_minimum_size = Vector2(60, 28)
-	b.size_flags_horizontal = SIZE_EXPAND_FILL
+	b.tooltip_text = tip
+	b.custom_minimum_size = Vector2(30, 24)
 	return b
 
 

@@ -13,6 +13,8 @@ var _media: Node
 var _shows: Node
 var _clock := -1.0   ## the fake song position the show follows
 
+const TEST_PREVIEW_PORT := 47770   ## the show-preview test's port, away from a running game's 4777
+
 
 ## A PINIO 0.3 board, just enough for lights: answers HELLO, ACKs config and commands.
 class FakeBoard:
@@ -175,8 +177,9 @@ func _test_show_cues_helpers() -> void:
 ## The editor's Light Show dock, run outside the editor, talking to Shows over
 ## real UDP on this computer: scrubbing the timeline drives PinballIO's lights.
 func _test_editor_preview() -> void:
+	_shows.preview_port = TEST_PREVIEW_PORT   # not the real one: a running game may hold it
 	_shows.set_preview_listening(true, false)   # false: don't save it in user://
-	_check(_shows.preview_listening, "game listens for the show preview on UDP %d" % _shows.PREVIEW_PORT)
+	_check(_shows.preview_listening, "game listens for the show preview on UDP %d" % _shows.preview_port)
 
 	var show_scene: Node = (load("res://assets/shows/test/test_loop_a.tscn") as PackedScene).instantiate()
 	var player: AnimationPlayer = show_scene.get_node("AnimationPlayer")
@@ -188,6 +191,7 @@ func _test_editor_preview() -> void:
 
 	var dock: Node = load("res://addons/loso_show_tools/show_dock.gd").new()
 	root.add_child(dock)
+	dock.port = TEST_PREVIEW_PORT
 	dock.set_show(show_scene)
 	dock.set_host("127.0.0.1")
 	dock.set_live(true)
@@ -223,6 +227,28 @@ func _test_editor_preview() -> void:
 	_check(cues.size() == 9 and cues.any(func(c: Dictionary) -> bool: return c["light"] == &"new_light"),
 			"the dock reads the new cues back (%d cues)" % cues.size())
 
+	# Edit the key a light follows at the playhead (the light rows' fields).
+	player.seek(2.5, false)   # playfield follows its BLINK key at 2.0 s
+	await _frames()
+	var pf_track := ShowCues.track_for_light(anim, &"playfield")
+	var keys_before := anim.track_get_key_count(pf_track)
+	dock.edit_at_playhead(&"playfield", "PULSE", Color.GREEN, 700, Color.BLACK)
+	var edited: Array = anim.method_track_get_params(pf_track, anim.track_find_key(pf_track, 2.0, Animation.FIND_MODE_APPROX))
+	_check(anim.track_get_key_count(pf_track) == keys_before and edited[1] == "PULSE" and edited[3] == 700,
+			"editing at 2.5 s changes the 2.0 s key in place: %s" % [edited])
+	await _until(func() -> bool: return _io.get_light(&"playfield")["effect"] == "PULSE", 120)
+	_check(_io.get_light(&"playfield")["effect"] == "PULSE", "the edit reaches the game's lights right away")
+	dock.delete_at_playhead(&"playfield")
+	_check(anim.track_get_key_count(pf_track) == keys_before - 1 and anim.track_find_key(pf_track, 2.0, Animation.FIND_MODE_APPROX) < 0,
+			"delete removes the key the light follows")
+	player.seek(0.1, false)   # new_light's first key is at 0.25 s: nothing yet
+	await _frames()
+	dock.edit_at_playhead(&"new_light", "OFF", Color.RED, 500, Color.BLACK)
+	var nl_track := ShowCues.track_for_light(anim, &"new_light")
+	var made: Array = anim.method_track_get_params(nl_track, anim.track_find_key(nl_track, 0.1, Animation.FIND_MODE_APPROX))
+	_check(made[1] == "SOLID" and made[2] == Color.RED,
+			"editing a light with no key yet adds one at the playhead (SOLID, not OFF): %s" % [made])
+
 	dock.set_live(false)   # sends OFF
 	await _until(func() -> bool: return _io.get_light(&"playfield")["effect"] == "OFF", 120)
 	_check(_io.get_light(&"playfield")["effect"] == "OFF", "turning Send to game off turns the lights off")
@@ -230,6 +256,7 @@ func _test_editor_preview() -> void:
 	dock.queue_free()
 	show_scene.queue_free()
 	_shows.set_preview_listening(false, false)
+	_shows.preview_port = _shows.PREVIEW_PORT
 	_check(not _shows.is_previewing(), "stop listening ends the preview")
 	await _frames()
 

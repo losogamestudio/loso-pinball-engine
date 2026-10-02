@@ -89,9 +89,10 @@ A show is an **AnimationPlayer** timeline, much like Unreal's Sequencer. Each ke
 3. **Set the length.** Set the animation **length** (the box at the top right of the Animation panel, in seconds) to the song's length. Turn **looping** on if the song loops.
 4. **Add cues with the Light Show dock** (right side of the editor, under the Inspector; see [below](#the-light-show-dock-live-preview-in-the-editor)).
    1. Move the playhead to the beat.
-   2. In the dock under **New cue**, pick the **Light**, **Effect**, **Color**, **Color 2** and **Speed**.
-   3. Click **Add cue at playhead**. The key goes on that light's own track, which the dock makes the first time. Ctrl+Z undoes it.
-   - Move, copy or delete keys on the timeline as usual. To change a key, select it and edit its arguments in the **Inspector**, or tap the light's swatch in the dock to load its cue, change it, and add it again at the same moment (which replaces it).
+   2. Each light has a row under **Lights at the playhead**: a swatch, which key it's following (**key at 2.00 s**, **key here**, or **no key yet**), **+** and **✕**, then its **effect**, **color**, **color 2** and **speed** (ms).
+   3. **+** adds a new key at the playhead for that light, a copy of the row's settings. Then change the effect, colors or speed in the row: that edits the key. The key goes on the light's own track, which the dock makes the first time.
+   4. Changing a row's fields **edits the key the light is following**, even when that key is earlier than the playhead (the row says which). A light with **no key yet** gets one at the playhead. **✕** deletes the key. Ctrl+Z undoes any of it, and dragging a color is one undo step.
+   - Move or copy keys on the timeline as usual. Selecting a key there and editing its arguments in the **Inspector** works too.
    - **By hand, without the dock:** **Add Track → Call Method Track** → the **LightShow** root node, one track per light (a track holds one key at each moment, so two lights changing together need two tracks). Right-click the track → **Insert Key** → **`cue`**, then fill in **light**, **effect**, **color**, **ms**, **color2** in the Inspector.
 5. **Watch it on the real LEDs** while you work: see the next section.
 6. **Pick what it follows.** Select the **LightShow** root node. In the Inspector, **Sync To** is `music` (the song with the same name, the usual case), `video` (a cutscene with the same name), or `none` (its own clock from when it starts).
@@ -103,7 +104,7 @@ The template, the demo, and `media/light_show.gd` all follow this layout. To reg
 
 Godot doesn't call Call Method keys while you preview an animation in the editor, so on its own the timeline can't light anything. Our editor plugin, **Loso Show Tools** (`addons/loso_show_tools/`, enabled in **Project → Project Settings → Plugins**), adds a **Light Show** dock (right side, under the Inspector) that fills the gap. Can't see it? Check the plugin is on in Project Settings → Plugins, or turn it off and on again there; you can drag the dock anywhere. It reads the cue keys itself, works out what every light is doing at the playhead, and:
 
-- **Shows it in the dock:** one swatch per light with its effect, while you play or scrub.
+- **Shows it in the dock:** one row per light with its swatch and its settings, while you play or scrub. Edits in a row show on the LEDs as you make them.
 - **Sends it to the running game** with **Send to game** on. The game passes each change to the board, so **the real LEDs follow the playhead**. Dragging the playhead backwards or jumping around sends each light's state at the new spot, so you can step through a show beat by beat.
 
 **Setting it up:**
@@ -114,7 +115,6 @@ Godot doesn't call Call Method keys while you preview an animation in the editor
 
 **Good to know:**
 - The light list in the dock comes from the game (or from this PC's machine config if the game isn't answering). A light the show uses that the game doesn't have is listed in red.
-- **Try** sends the New cue settings to the game right away without adding a key, to audition an effect.
 - **Resend** sends every light again (e.g. if the game restarted; the dock also does this by itself when the game comes back).
 - Leaving the show, or turning **Send to game** off, turns the lights off.
 - It's plain UDP on port 4777 on your local network, and the game only listens while **Show preview** is on. It controls lights only, never coils.

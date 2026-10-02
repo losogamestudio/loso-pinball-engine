@@ -41,6 +41,8 @@ var clock_override := Callable()
 var preview_listening := false
 ## Who's previewing now ("ip:port"), or "" when nobody is.
 var preview_peer := ""
+## The UDP port to listen on. Tests change it, so they don't clash with a running game.
+var preview_port := PREVIEW_PORT
 
 var _library := {}   ## show name -> scene path
 var _cue_cache := {}  ## show name -> ShowData
@@ -259,7 +261,7 @@ func _load(show_name: StringName) -> ShowData:
 
 # ---------------------------------------------------------------- show preview from the editor
 
-## Start or stop listening for the editor's Light Show dock on PREVIEW_PORT (UDP).
+## Start or stop listening for the editor's Light Show dock on preview_port (UDP).
 ## remember = save the choice on this machine (user://audio.cfg).
 func set_preview_listening(on: bool, remember := true) -> void:
 	if remember:
@@ -271,9 +273,9 @@ func set_preview_listening(on: bool, remember := true) -> void:
 		return
 	if on:
 		_preview_udp = PacketPeerUDP.new()
-		var err := _preview_udp.bind(PREVIEW_PORT)
+		var err := _preview_udp.bind(preview_port)
 		if err != OK:
-			push_warning("Shows: can't listen for the show preview on UDP port %d (error %d). Is another copy of the game running?" % [PREVIEW_PORT, err])
+			push_warning("Shows: can't listen for the show preview on UDP port %d (error %d). Is another copy of the game running?" % [preview_port, err])
 			_preview_udp = null
 			preview_listening = false
 			return
